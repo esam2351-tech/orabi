@@ -204,6 +204,7 @@
       <button onclick="doLogin()" id="loginBtn">دخول</button>
     </div>
   </div>
+  <button type="button" class="install-link" onclick="triggerInstall()" style="background:none;border:none;color:var(--muted);font-size:.82rem;margin-top:20px;cursor:pointer;">📱 تثبيت التطبيق على الموبايل</button>
 </div>
 
 <!-- ======================= الشاشة الرئيسية بعد الدخول ======================= -->
@@ -373,6 +374,30 @@ function downloadExcel(rows, filename, sheetName){
    بدء التشغيل
    ============================================================ */
 window.addEventListener('DOMContentLoaded', init);
+
+/* ================= زرار "تثبيت التطبيق على الموبايل" ================= */
+let _deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  _deferredInstallPrompt = e;
+});
+window.addEventListener('appinstalled', ()=>{ _deferredInstallPrompt = null; });
+
+async function triggerInstall(){
+  if(_deferredInstallPrompt){
+    _deferredInstallPrompt.prompt();
+    await _deferredInstallPrompt.userChoice;
+    _deferredInstallPrompt = null;
+    return;
+  }
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) && !window.MSStream;
+  if(isIOS){
+    alert('لتثبيت التطبيق على آيفون:\n١) افتح الموقع من متصفح Safari\n٢) دوس زرار المشاركة (المربع وفوقه سهم) تحت الشاشة\n٣) اختار "Add to Home Screen" / "إضافة إلى الشاشة الرئيسية"');
+  } else {
+    alert('لتثبيت التطبيق:\nافتح قائمة المتصفح (⋮ فوق يمين الشاشة) واختار "تثبيت التطبيق" أو "إضافة إلى الشاشة الرئيسية".\n\nلو التطبيق مثبّت بالفعل، هتلاقيه شغال من أيقونته على الشاشة الرئيسية.');
+  }
+}
 
 async function init(){
   if(!isConfigured){

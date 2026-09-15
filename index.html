@@ -237,10 +237,15 @@ const PERMISSIONS_META = [
 ];
 
 const CHECKLIST_TYPES = [
-  {id:'morningManager',  label:'تشيك ليست المدير الصباحي', icon:'🌅', permission:'morningManagerChecklist'},
-  {id:'eveningManager',  label:'تشيك ليست المدير المسائي', icon:'🌆', permission:'eveningManagerChecklist'},
-  {id:'morningCleaning', label:'تشيك ليست النظافة الصباحي', icon:'🧹', permission:'morningCleaningChecklist'},
-  {id:'eveningCleaning', label:'تشيك ليست النظافة المسائي', icon:'🌙', permission:'eveningCleaningChecklist'}
+  {id:'morningManager',  label:'تشيك ليست المدير الصباحي', icon:'🌅', permission:'morningManagerChecklist', category:'manager', shiftLabel:'صباحي'},
+  {id:'eveningManager',  label:'تشيك ليست المدير المسائي', icon:'🌆', permission:'eveningManagerChecklist', category:'manager', shiftLabel:'مسائي'},
+  {id:'morningCleaning', label:'تشيك ليست النظافة الصباحي', icon:'🧹', permission:'morningCleaningChecklist', category:'cleaning', shiftLabel:'صباحي'},
+  {id:'eveningCleaning', label:'تشيك ليست النظافة المسائي', icon:'🌙', permission:'eveningCleaningChecklist', category:'cleaning', shiftLabel:'مسائي'}
+];
+
+const CHECKLIST_CATEGORIES = [
+  {id:'manager',  label:'سجل تشيك ليست المدير',  icon:'📊'},
+  {id:'cleaning', label:'سجل تشيك ليست النظافة', icon:'🧼'}
 ];
 
 /* ============================================================
@@ -384,6 +389,10 @@ function enterDashboard(){
   CHECKLIST_TYPES.forEach(ct=>{
     if(hasPerm(ct.permission)) tiles.push({icon:ct.icon, label:ct.label, fn:()=>openChecklistFill(ct.id)});
   });
+  CHECKLIST_CATEGORIES.forEach(cat=>{
+    const typesInCat = CHECKLIST_TYPES.filter(t=>t.category===cat.id);
+    if(typesInCat.some(t=>hasPerm(t.permission))) tiles.push({icon:cat.icon, label:cat.label, fn:()=>openChecklistLog(cat.id)});
+  });
   if(state.user.role === 'admin') tiles.push({icon:'⚙️', label:'الإعدادات', fn:openSettings});
 
   $('tilesContainer').innerHTML = tiles.map((t,i)=>`
@@ -443,17 +452,7 @@ async function openChecklistFill(typeId){
       <div class="ok-msg" id="clOk"></div>
       <div class="btn-row"><button onclick="submitChecklist('${typeId}')">حفظ التشيك ليست</button></div>
     </div>` : ''}
-    <div class="section-title" style="margin-top:24px"><h2>السجل السابق</h2></div>
-    <div class="filters">
-      <div class="fld"><label>من تاريخ</label><input type="date" id="clHistFrom"></div>
-      <div class="fld"><label>إلى تاريخ</label><input type="date" id="clHistTo"></div>
-      <button onclick="loadChecklistHistory('${typeId}')">عرض</button>
-      <button class="secondary" onclick="exportChecklistExcel()">تصدير Excel</button>
-    </div>
-    <div class="card table-wrap" id="clHistTable"><div class="empty-state">اختر فترة واضغط عرض</div></div>
   `;
-  const t = todayStr();
-  if($('clHistFrom')){ $('clHistFrom').value = t; $('clHistTo').value = t; }
 }
 function toggleClItem(btn, kind){
   const group = btn.parentElement;
@@ -480,31 +479,60 @@ async function submitChecklist(typeId){
   $('clOk').textContent = 'تم حفظ التشيك ليست بنجاح';
   setTimeout(()=> openChecklistFill(typeId), 1200);
 }
-async function loadChecklistHistory(typeId){
+/* ============================================================
+   سجل التشيك ليست (مجمّع صباحي + مسائي لكل فئة: مدير / نظافة)
+   ============================================================ */
+function categoryMeta(catId){ return CHECKLIST_CATEGORIES.find(c=>c.id===catId); }
+
+async function openChecklistLog(catId){
+  openInner();
+  window._clCurrentCategory = catId;
+  const meta = categoryMeta(catId);
+  $('innerContent').innerHTML = `
+    <div class="section-title"><h2>${meta.icon} ${escapeHtml(meta.label)}</h2></div>
+    <div class="filters">
+      <div class="fld"><label>من تاريخ</label><input type="date" id="clHistFrom"></div>
+      <div class="fld"><label>إلى تاريخ</label><input type="date" id="clHistTo"></div>
+      <button onclick="loadChecklistLog('${catId}')">عرض</button>
+      <button class="secondary" onclick="exportChecklistLogExcel()">تصدير Excel</button>
+    </div>
+    <div class="card table-wrap" id="clHistTable"><div class="empty-state">اختر فترة واضغط عرض</div></div>
+  `;
+  const t = todayStr();
+  $('clHistFrom').value = t; $('clHistTo').value = t;
+}
+async function loadChecklistLog(catId){
   const from = $('clHistFrom').value, to = $('clHistTo').value;
-  const snap = await db.collection('checklistSubmissions').where('type','==',typeId).get();
-  const rows = snap.docs.map(d=>({id:d.id,...d.data()}))
-    .filter(r=> r.date >= from && r.date <= to)
-    .sort((a,b)=> b.date.localeCompare(a.date));
+  const typesInCat = CHECKLIST_TYPES.filter(t=>t.category===catId);
+  const snaps = await Promise.all(typesInCat.map(t=>
+    db.collection('checklistSubmissions').where('type','==',t.id).get()
+  ));
+  let rows = [];
+  snaps.forEach((snap, idx)=>{
+    const shiftLabel = typesInCat[idx].shiftLabel;
+    snap.docs.forEach(d=> rows.push({id:d.id, shiftLabel, ...d.data()}));
+  });
+  rows = rows.filter(r=> r.date >= from && r.date <= to)
+    .sort((a,b)=> b.date.localeCompare(a.date) || a.shiftLabel.localeCompare(b.shiftLabel,'ar'));
   window._clHistRows = rows;
   $('clHistTable').innerHTML = rows.length ? `
-    <table><thead><tr><th>التاريخ</th><th>بواسطة</th><th>عدد المشاكل</th><th>ملاحظات عامة</th></tr></thead>
+    <table><thead><tr><th>التاريخ</th><th>الفترة</th><th>بواسطة</th><th>عدد المشاكل</th><th>ملاحظات عامة</th></tr></thead>
     <tbody>${rows.map(r=>{
       const problems = (r.items||[]).filter(i=>i.status==='bad');
       return `<tr>
-        <td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.submittedBy)}</td>
+        <td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.shiftLabel)}</td><td>${escapeHtml(r.submittedBy)}</td>
         <td>${problems.length ? '<span class="badge open">'+problems.length+'</span>' : '<span class="badge closed">0</span>'}</td>
         <td>${escapeHtml(r.generalNotes)} ${problems.length? '<br><small>'+problems.map(p=>escapeHtml(p.text)+(p.note?(' - '+escapeHtml(p.note)):'')).join('<br>')+'</small>':''}</td>
       </tr>`;
     }).join('')}</tbody></table>
   ` : `<div class="empty-state">لا يوجد سجل في هذه الفترة</div>`;
 }
-function exportChecklistExcel(){
+function exportChecklistLogExcel(){
   const rows = window._clHistRows || [];
   if(!rows.length){ alert('اعرض السجل أولاً'); return; }
-  const meta = checklistMeta(window._clCurrentType) || {label:'تشيك_ليست'};
+  const meta = categoryMeta(window._clCurrentCategory) || {label:'تشيك_ليست'};
   downloadExcel(rows.map(r=>({
-    التاريخ:r.date, بواسطة:r.submittedBy,
+    التاريخ:r.date, الفترة:r.shiftLabel, بواسطة:r.submittedBy,
     'عدد المشاكل': (r.items||[]).filter(i=>i.status==='bad').length,
     'تفاصيل المشاكل': (r.items||[]).filter(i=>i.status==='bad').map(i=>i.text+(i.note?(' - '+i.note):'')).join(' | '),
     'ملاحظات عامة': r.generalNotes

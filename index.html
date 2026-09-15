@@ -430,8 +430,9 @@ async function openChecklistFill(typeId){
     <div class="section-title"><h2>${meta.icon} ${escapeHtml(meta.label)}</h2></div>
     <div class="card" style="margin-bottom:16px">
       <label>التاريخ</label>
-      <input type="date" id="clDate" value="${todayStr()}" style="max-width:200px">
+      <input type="date" id="clDate" value="${todayStr()}" style="max-width:200px" onchange="checkDuplicateSubmission('${typeId}')">
     </div>
+    <div id="clDupNotice"></div>
     <div class="card" id="clItemsCard">
       ${items.length ? items.map(it=>`
         <div class="checklist-item-row" data-id="${it.id}">
@@ -453,6 +454,21 @@ async function openChecklistFill(typeId){
       <div class="btn-row"><button onclick="submitChecklist('${typeId}')">حفظ التشيك ليست</button></div>
     </div>` : ''}
   `;
+  checkDuplicateSubmission(typeId);
+}
+async function checkDuplicateSubmission(typeId){
+  const box = $('clDupNotice');
+  if(!box) return;
+  const date = $('clDate').value;
+  box.innerHTML = '';
+  if(!date) return;
+  const snap = await db.collection('checklistSubmissions')
+    .where('type','==',typeId).where('date','==',date).limit(1).get();
+  if(!snap.empty){
+    const d = snap.docs[0].data();
+    const time = (d.submittedAt && d.submittedAt.toDate) ? d.submittedAt.toDate().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
+    box.innerHTML = `<div class="setup-banner">⚠️ فيه تشيك ليست اتسجل بالفعل في نفس اليوم بواسطة <b>${escapeHtml(d.submittedBy)}</b>${time?(' الساعة '+escapeHtml(time)):''}. لو كملت وحفظت هيتسجل تشيك ليست تاني لنفس اليوم والشيفت.</div>`;
+  }
 }
 function toggleClItem(btn, kind){
   const group = btn.parentElement;

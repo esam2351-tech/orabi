@@ -17,6 +17,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-app-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-firestore-compat.min.js"></script><!-- SheetJS لتصدير Excel -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- لتصدير سجل التشيك ليست كصورة/PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
   :root{
@@ -170,6 +173,33 @@
   .modal-body{padding:18px;}
   .spinner{display:inline-block; width:16px; height:16px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
+
+  .cl-card{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow);
+    padding:16px; margin-bottom:12px; cursor:pointer; transition:.15s;
+  }
+  .cl-card:hover{border-color:var(--brand);}
+  .cl-card-top{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:6px;}
+  .cl-card-top h4{margin:0; font-size:.98rem;}
+  .cl-card-sub{color:var(--muted); font-size:.82rem; margin:0 0 10px;}
+  .cl-card-del{background:#fdecea; color:var(--bad); border:none; padding:7px 14px; border-radius:8px; font-size:.8rem; font-weight:700; cursor:pointer;}
+  .cl-card-del:hover{background:#f8d7d3;}
+
+  .cl-detail-actions{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
+  .cl-detail-actions button{flex:1; min-width:130px;}
+
+  .cl-item-view{
+    display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--border);
+    border-radius:10px; margin-bottom:8px; background:#fff;
+  }
+  .cl-item-view .st{
+    width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:.85rem; font-weight:800; flex-shrink:0; color:#fff;
+  }
+  .cl-item-view .st.ok{background:var(--ok);}
+  .cl-item-view .st.bad{background:var(--bad);}
+  .cl-item-view .txt{flex:1; font-weight:600;}
+  .cl-item-view .note{color:var(--muted); font-size:.82rem;}
 </style>
 </head>
 <body>
@@ -658,21 +688,24 @@ async function openChecklistLog(catId){
   openInner();
   window._clCurrentCategory = catId;
   const meta = categoryMeta(catId);
+  const saved = (window._clLogFilters && window._clLogFilters.catId===catId) ? window._clLogFilters : null;
+  const defTo = todayStr();
+  const defFrom = new Date(Date.now() - 29*86400000).toISOString().slice(0,10);
   $('innerContent').innerHTML = `
     <div class="section-title"><h2>${meta.icon} ${escapeHtml(meta.label)}</h2></div>
     <div class="filters">
-      <div class="fld"><label>من تاريخ</label><input type="date" id="clHistFrom"></div>
-      <div class="fld"><label>إلى تاريخ</label><input type="date" id="clHistTo"></div>
+      <div class="fld"><label>من تاريخ</label><input type="date" id="clHistFrom" value="${saved?saved.from:defFrom}"></div>
+      <div class="fld"><label>إلى تاريخ</label><input type="date" id="clHistTo" value="${saved?saved.to:defTo}"></div>
       <button onclick="loadChecklistLog('${catId}')">عرض</button>
       <button class="secondary" onclick="exportChecklistLogExcel()">تصدير Excel</button>
     </div>
-    <div class="card table-wrap" id="clHistTable"><div class="empty-state">اختر فترة واضغط عرض</div></div>
+    <div id="clHistTable"><div class="empty-state">جارِ التحميل...</div></div>
   `;
-  const t = todayStr();
-  $('clHistFrom').value = t; $('clHistTo').value = t;
+  loadChecklistLog(catId);
 }
 async function loadChecklistLog(catId){
   const from = $('clHistFrom').value, to = $('clHistTo').value;
+  window._clLogFilters = {catId, from, to};
   const typesInCat = CHECKLIST_TYPES.filter(t=>t.category===catId);
   const snaps = await Promise.all(typesInCat.map(t=>
     db.collection('checklistSubmissions').where('type','==',t.id).get()
@@ -685,17 +718,23 @@ async function loadChecklistLog(catId){
   rows = rows.filter(r=> r.date >= from && r.date <= to)
     .sort((a,b)=> b.date.localeCompare(a.date) || a.shiftLabel.localeCompare(b.shiftLabel,'ar'));
   window._clHistRows = rows;
-  $('clHistTable').innerHTML = rows.length ? `
-    <table><thead><tr><th>التاريخ</th><th>الفترة</th><th>بواسطة</th><th>عدد المشاكل</th><th>ملاحظات عامة</th></tr></thead>
-    <tbody>${rows.map(r=>{
-      const problems = (r.items||[]).filter(i=>i.status==='bad');
-      return `<tr>
-        <td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.shiftLabel)}</td><td>${escapeHtml(r.submittedBy)}</td>
-        <td>${problems.length ? '<span class="badge open">'+problems.length+'</span>' : '<span class="badge closed">0</span>'}</td>
-        <td>${escapeHtml(r.generalNotes)} ${problems.length? '<br><small>'+problems.map(p=>escapeHtml(p.text)+(p.note?(' - '+escapeHtml(p.note)):'')).join('<br>')+'</small>':''}</td>
-      </tr>`;
-    }).join('')}</tbody></table>
-  ` : `<div class="empty-state">لا يوجد سجل في هذه الفترة</div>`;
+  window._clSubmissionCache = {};
+  rows.forEach(r=> window._clSubmissionCache[r.id] = r);
+  const isAdmin = state.user && state.user.role === 'admin';
+  $('clHistTable').innerHTML = rows.length ? rows.map(r=>{
+    const problems = (r.items||[]).filter(i=>i.status==='bad');
+    const shiftIcon = r.shiftLabel==='مسائي' ? '🌙' : '☀️';
+    const tag = problems.length ? `<span class="badge open">${problems.length} مشكلة</span>` : `<span class="badge closed">كله سليم</span>`;
+    return `
+      <div class="cl-card" onclick="openChecklistSubmissionDetail('${catId}','${r.id}')">
+        <div class="cl-card-top">
+          <h4>${shiftIcon} ${escapeHtml(r.shiftLabel)} · ${escapeHtml(r.date)}</h4>
+          ${tag}
+        </div>
+        <p class="cl-card-sub">سجّلها: ${escapeHtml(r.submittedBy)}</p>
+        ${isAdmin ? `<button type="button" class="cl-card-del" onclick="event.stopPropagation(); deleteChecklistSubmission('${catId}','${r.id}')">🗑️ حذف</button>` : ''}
+      </div>`;
+  }).join('') : `<div class="empty-state">لا يوجد سجل في هذه الفترة</div>`;
 }
 function exportChecklistLogExcel(){
   const rows = window._clHistRows || [];
@@ -707,6 +746,173 @@ function exportChecklistLogExcel(){
     'تفاصيل المشاكل': (r.items||[]).filter(i=>i.status==='bad').map(i=>i.text+(i.note?(' - '+i.note):'')).join(' | '),
     'ملاحظات عامة': r.generalNotes
   })), 'سجل_'+meta.label.replace(/\s+/g,'_')+'.xlsx', 'السجل');
+}
+
+/* ---------- تفاصيل تشيك ليست واحد: عرض / حذف / تصدير (صور - PDF - Excel) ---------- */
+function openChecklistSubmissionDetail(catId, id){
+  const r = (window._clSubmissionCache || {})[id];
+  if(!r) return;
+  window._clCurrentCategory = catId;
+  const meta = checklistMeta(r.type);
+  const problems = (r.items||[]).filter(i=>i.status==='bad');
+  const shiftIcon = r.shiftLabel==='مسائي' ? '🌙' : '☀️';
+  const isAdmin = state.user && state.user.role === 'admin';
+  $('innerContent').innerHTML = `
+    <div class="section-title"><h2>${meta?meta.icon:''} ${escapeHtml(r.date)} · ${escapeHtml(r.shiftLabel)}</h2></div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="cl-detail-actions">
+        <button class="ghost" onclick="openChecklistLog('${catId}')">→ رجوع للسجل</button>
+        ${isAdmin ? `<button class="danger" onclick="deleteChecklistSubmission('${catId}','${id}', true)">🗑️ حذف</button>` : ''}
+      </div>
+      <div class="cl-detail-actions">
+        <button style="background:#25D366" id="clShareImgBtn" onclick="shareChecklistSubmissionImages('${id}')">📤 مشاركة كصورة</button>
+        <button class="secondary" id="clSharePdfBtn" onclick="shareChecklistSubmissionPDF('${id}')">📄 مشاركة PDF</button>
+        <button class="secondary" onclick="exportChecklistSubmissionExcel('${id}')">📊 تصدير Excel</button>
+      </div>
+      <p style="margin:0 0 4px;font-weight:700;">${shiftIcon} ${escapeHtml(r.date)} · ${escapeHtml(r.shiftLabel)}</p>
+      <p style="margin:0;color:var(--muted);font-size:.85rem;">سجّلها: ${escapeHtml(r.submittedBy)} · ${problems.length ? problems.length+' بند فيه مشكلة' : 'كل البنود سليمة'}</p>
+    </div>
+    <div class="card">
+      ${(r.items||[]).map(it=>`
+        <div class="cl-item-view">
+          <span class="st ${it.status==='bad'?'bad':'ok'}">${it.status==='bad'?'✗':'✓'}</span>
+          <span class="txt">${escapeHtml(it.text)}</span>
+          ${it.note ? `<span class="note">${escapeHtml(it.note)}</span>` : ''}
+        </div>
+      `).join('')}
+    </div>
+    ${r.generalNotes ? `<div class="card"><label style="margin-top:0">ملاحظات عامة</label><p style="margin:6px 0 0;">${escapeHtml(r.generalNotes)}</p></div>` : ''}
+  `;
+}
+async function deleteChecklistSubmission(catId, id, fromDetail){
+  if(!state.user || state.user.role !== 'admin'){ alert('حذف السجلات متاح للمدير فقط'); return; }
+  if(!confirm('متأكد إنك عايز تحذف السجل ده نهائيًا؟ مفيش رجوع بعد الحذف.')) return;
+  await db.collection('checklistSubmissions').doc(id).delete();
+  openChecklistLog(catId);
+}
+
+function buildChecklistShareHTML(r){
+  const meta = checklistMeta(r.type);
+  const problems = (r.items||[]).filter(i=>i.status==='bad');
+  const logoImg = document.querySelector('.app-logo, .header-logo');
+  const logoSrc = logoImg ? logoImg.src : '';
+  const rows = (r.items||[]).map(it=>{
+    const ok = it.status !== 'bad';
+    return `<tr style="border-top:1px solid #eee;">
+      <td style="padding:9px 10px;font-weight:800;color:${ok?'#222':'#c62828'};">${escapeHtml(it.text)}</td>
+      <td style="padding:9px 6px;text-align:center;width:36px;font-size:18px;">${ok?'✅':'❌'}</td>
+      <td style="padding:9px 8px;font-size:13px;color:#c62828;text-align:center;">${it.note?escapeHtml(it.note):'—'}</td>
+    </tr>`;
+  }).join('');
+  return `<div style="font-family:Tahoma,Arial,sans-serif;direction:rtl;width:900px;background:#faf6f2;padding:26px 30px;color:#222;box-sizing:border-box;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      ${logoSrc?`<img src="${logoSrc}" style="width:40px;height:40px;border-radius:9px;object-fit:cover;">`:''}
+      <div>
+        <div style="font-weight:900;font-size:19px;color:#014D40;">عرابي</div>
+        <div style="font-size:11px;color:#8a8a8a;">${meta?escapeHtml(meta.label):''}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+      <div style="flex:1;min-width:140px;background:#fff;border:1px solid #eee0d3;border-radius:10px;padding:10px 14px;">
+        <div style="font-size:11px;color:#8a8a8a;">التاريخ</div><div style="font-weight:800;">${escapeHtml(r.date)}</div>
+      </div>
+      <div style="flex:1;min-width:140px;background:#fff;border:1px solid #eee0d3;border-radius:10px;padding:10px 14px;">
+        <div style="font-size:11px;color:#8a8a8a;">الفترة</div><div style="font-weight:800;">${escapeHtml(r.shiftLabel)}</div>
+      </div>
+      <div style="flex:1;min-width:140px;background:#fff;border:1px solid #eee0d3;border-radius:10px;padding:10px 14px;">
+        <div style="font-size:11px;color:#8a8a8a;">سجّلها</div><div style="font-weight:800;">${escapeHtml(r.submittedBy)}</div>
+      </div>
+      <div style="flex:1;min-width:140px;background:#fff;border:1px solid #eee0d3;border-radius:10px;padding:10px 14px;">
+        <div style="font-size:11px;color:#8a8a8a;">عدد المشاكل</div><div style="font-weight:800;color:${problems.length?'#c62828':'#1f8a4c'};">${problems.length}</div>
+      </div>
+    </div>
+    <div style="border:1px solid #eee0d3;border-radius:10px;overflow:hidden;background:#fff;">
+      <table style="width:100%;border-collapse:collapse;"><tbody>${rows}</tbody></table>
+    </div>
+    ${r.generalNotes?`<div style="margin-top:14px;font-size:13px;"><b>ملاحظات عامة:</b> ${escapeHtml(r.generalNotes)}</div>`:''}
+  </div>`;
+}
+function renderChecklistShareCanvas(r){
+  return new Promise((resolve, reject)=>{
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;z-index:-9999;';
+    container.innerHTML = buildChecklistShareHTML(r);
+    document.body.appendChild(container);
+    const capture = ()=>{
+      html2canvas(container.firstElementChild, {scale:2, backgroundColor:'#faf6f2', useCORS:true}).then(canvas=>{
+        container.remove();
+        resolve(canvas);
+      }).catch(err=>{ container.remove(); reject(err); });
+    };
+    if(document.fonts && document.fonts.ready){ document.fonts.ready.then(capture).catch(capture); }
+    else { capture(); }
+  });
+}
+async function shareChecklistSubmissionImages(id){
+  const r = (window._clSubmissionCache || {})[id];
+  if(!r) return;
+  const btn = $('clShareImgBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'جارِ تجهيز الصورة...'; }
+  try{
+    const canvas = await renderChecklistShareCanvas(r);
+    const blob = await new Promise(res=> canvas.toBlob(res, 'image/png', 1));
+    const fileName = `تشيك_ليست_${r.date}.png`;
+    const file = new File([blob], fileName, {type:'image/png'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'تشيك ليست عرابي'});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
+      URL.revokeObjectURL(url);
+      alert('المتصفح ده مش بيدعم المشاركة المباشرة، فاتحفظت الصورة في الجهاز.');
+    }
+  }catch(e){
+    alert('تعذّر تجهيز الصورة، حاول تاني');
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '📤 مشاركة كصورة'; }
+  }
+}
+async function shareChecklistSubmissionPDF(id){
+  const r = (window._clSubmissionCache || {})[id];
+  if(!r) return;
+  const btn = $('clSharePdfBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'جارِ تجهيز الملف...'; }
+  try{
+    const canvas = await renderChecklistShareCanvas(r);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({unit:'px', format:[canvas.width, canvas.height], orientation: canvas.width>=canvas.height?'l':'p'});
+    pdf.addImage(canvas.toDataURL('image/png',1.0), 'PNG', 0, 0, canvas.width, canvas.height);
+    const blob = pdf.output('blob');
+    const fileName = `تشيك_ليست_${r.date}.pdf`;
+    const file = new File([blob], fileName, {type:'application/pdf'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'تشيك ليست عرابي'});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
+      URL.revokeObjectURL(url);
+    }
+  }catch(e){
+    alert('تعذّر تجهيز الملف، حاول تاني');
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '📄 مشاركة PDF'; }
+  }
+}
+function exportChecklistSubmissionExcel(id){
+  const r = (window._clSubmissionCache || {})[id];
+  if(!r) return;
+  const meta = checklistMeta(r.type);
+  const rows = [
+    {البند:'التاريخ', الحالة:r.date, ملاحظة:''},
+    {البند:'الفترة', الحالة:r.shiftLabel, ملاحظة:''},
+    {البند:'سجّلها', الحالة:r.submittedBy, ملاحظة:''},
+    ...(r.items||[]).map(it=>({
+      البند: it.text,
+      الحالة: it.status==='bad' ? 'في مشكلة' : 'تمام',
+      ملاحظة: it.note || ''
+    }))
+  ];
+  downloadExcel(rows, `تشيك_ليست_${meta?meta.label.replace(/\s+/g,'_'):''}_${r.date}.xlsx`, 'التشيك ليست');
 }
 
 /* ============================================================

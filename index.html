@@ -184,6 +184,12 @@
   .cl-card-sub{color:var(--muted); font-size:.82rem; margin:0 0 10px;}
   .cl-card-del{background:#fdecea; color:var(--bad); border:none; padding:7px 14px; border-radius:8px; font-size:.8rem; font-weight:700; cursor:pointer;}
   .cl-card-del:hover{background:#f8d7d3;}
+  .cl-card-problems{
+    list-style:none; margin:0 0 12px; padding:10px 12px; background:#fdecea; border-radius:8px;
+    font-size:.82rem; color:var(--bad); line-height:1.9;
+  }
+  .cl-card-problems li{font-weight:600;}
+  .cl-card-problems li .note{font-weight:400; color:#8a3a3a;}
 
   .cl-detail-actions{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}
   .cl-detail-actions button{flex:1; min-width:130px;}
@@ -725,6 +731,10 @@ async function loadChecklistLog(catId){
     const problems = (r.items||[]).filter(i=>i.status==='bad');
     const shiftIcon = r.shiftLabel==='مسائي' ? '🌙' : '☀️';
     const tag = problems.length ? `<span class="badge open">${problems.length} مشكلة</span>` : `<span class="badge closed">كله سليم</span>`;
+    const problemsList = problems.length ? `
+        <ul class="cl-card-problems">
+          ${problems.map(p=>`<li>${escapeHtml(p.text)}${p.note ? ` — <span class="note">${escapeHtml(p.note)}</span>` : ''}</li>`).join('')}
+        </ul>` : '';
     return `
       <div class="cl-card" onclick="openChecklistSubmissionDetail('${catId}','${r.id}')">
         <div class="cl-card-top">
@@ -732,6 +742,7 @@ async function loadChecklistLog(catId){
           ${tag}
         </div>
         <p class="cl-card-sub">سجّلها: ${escapeHtml(r.submittedBy)}</p>
+        ${problemsList}
         ${isAdmin ? `<button type="button" class="cl-card-del" onclick="event.stopPropagation(); deleteChecklistSubmission('${catId}','${r.id}')">🗑️ حذف</button>` : ''}
       </div>`;
   }).join('') : `<div class="empty-state">لا يوجد سجل في هذه الفترة</div>`;

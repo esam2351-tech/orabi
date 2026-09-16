@@ -227,10 +227,15 @@
   .hbar-value{width:26px; text-align:left; font-size:.82rem; font-weight:700; color:var(--muted); flex-shrink:0; align-self:center;}
   @media (max-width:560px){ .hbar-label{width:120px; font-size:.76rem;} }
 
-  .trend-chart{display:flex; align-items:flex-end; gap:3px; height:120px; padding-top:10px; border-bottom:1px solid var(--border);}
-  .trend-bar{flex:1; height:100%; display:flex; align-items:flex-end; min-width:3px;}
+  .trend-sub{font-size:.8rem; color:var(--muted); margin:-6px 0 14px; font-weight:400;}
+  .trend-chart{display:flex; align-items:flex-end; gap:2px; padding-top:18px;}
+  .trend-col{flex:1; min-width:5px; display:flex; flex-direction:column; align-items:center;}
+  .trend-val{font-size:.66rem; font-weight:800; color:var(--text); height:14px; line-height:14px; white-space:nowrap;}
+  .trend-bar{width:100%; max-width:24px; height:100px; display:flex; align-items:flex-end; border-bottom:1px solid var(--border);}
   .trend-bar-fill{width:100%; background:var(--viz-seq); border-radius:3px 3px 0 0; min-height:2px;}
-  .trend-axis{display:flex; justify-content:space-between; font-size:.72rem; color:var(--muted); margin-top:6px;}
+  .trend-bar-fill.zero{background:var(--border);}
+  .trend-date{font-size:.62rem; color:var(--muted); margin-top:5px; white-space:nowrap; height:14px;}
+  @media (max-width:560px){ .trend-val{font-size:.58rem;} .trend-date{font-size:.56rem;} }
 </style>
 </head>
 <body>
@@ -1078,17 +1083,25 @@ async function loadProblemsDashboard(){
   { let d = new Date(from); const end = new Date(to);
     while(d <= end){ dateKeys.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); } }
   const maxDateVal = Math.max(1, ...dateKeys.map(dk=>byDate[dk]||0));
+  const shortDate = (iso)=>{ const p = iso.split('-'); return `${parseInt(p[2],10)}/${parseInt(p[1],10)}`; };
+  // نعرض تاريخ تحت عمود واحد كل كذا يوم عشان التواريخ متتلخبطش فوق بعض لو الفترة طويلة
+  const labelStep = Math.max(1, Math.ceil(dateKeys.length / 8));
   html += `
     <div class="card">
       <h3 style="margin-top:0">المشاكل يوميًا</h3>
+      <div class="trend-sub">عدد المشاكل المسجلة في كل يوم، من ${escapeHtml(shortDate(dateKeys[0]||from))} إلى ${escapeHtml(shortDate(dateKeys[dateKeys.length-1]||to))}${totalProblems ? ` (أعلى يوم: ${maxDateVal} مشكلة)` : ''}</div>
       <div class="trend-chart">
-        ${dateKeys.map(dk=>{
+        ${dateKeys.map((dk,i)=>{
           const v = byDate[dk]||0;
           const h = Math.max(2, Math.round((v/maxDateVal)*100));
-          return `<div class="trend-bar" title="${escapeHtml(dk)}: ${v} مشكلة"><div class="trend-bar-fill" style="height:${h}%"></div></div>`;
+          const showLabel = (i % labelStep === 0) || i === dateKeys.length - 1;
+          return `<div class="trend-col" title="${escapeHtml(dk)}: ${v} مشكلة">
+            <span class="trend-val">${v>0?v:''}</span>
+            <div class="trend-bar"><div class="trend-bar-fill${v===0?' zero':''}" style="height:${h}%"></div></div>
+            <span class="trend-date">${showLabel ? escapeHtml(shortDate(dk)) : ''}</span>
+          </div>`;
         }).join('')}
       </div>
-      <div class="trend-axis"><span>${escapeHtml(dateKeys[0]||'')}</span><span>${escapeHtml(dateKeys[dateKeys.length-1]||'')}</span></div>
     </div>`;
 
   $('dashContent').innerHTML = html;

@@ -1090,11 +1090,9 @@ async function loadProblemsDashboard(){
   const byItem = {};
   const byDate = {};
   let totalProblems = 0;
-  let subsWithProblem = 0;
 
   rows.forEach(r=>{
     const problems = (r.items||[]).filter(i=>i.status==='bad');
-    if(problems.length) subsWithProblem++;
     totalProblems += problems.length;
     if(byType[r.type] !== undefined) byType[r.type] += problems.length;
     problems.forEach(p=>{
@@ -1102,14 +1100,10 @@ async function loadProblemsDashboard(){
       byDate[r.date] = (byDate[r.date]||0) + 1;
     });
   });
-  const rate = totalSubs ? Math.round((subsWithProblem / totalSubs) * 100) : 0;
-  const rateColor = rate === 0 ? 'var(--ok)' : (rate >= 30 ? 'var(--bad)' : '#c98500');
-
   let html = `
     <div class="stat-grid">
       <div class="stat-tile"><div class="stat-value">${totalSubs}</div><div class="stat-label">تسجيلات تشيك ليست</div></div>
       <div class="stat-tile"><div class="stat-value" style="color:${totalProblems ? 'var(--bad)' : 'var(--ok)'}">${totalProblems}</div><div class="stat-label">إجمالي المشاكل</div></div>
-      <div class="stat-tile"><div class="stat-value" style="color:${rateColor}">${rate}%</div><div class="stat-label">نسبة التسجيلات فيها مشكلة</div></div>
     </div>`;
 
   const typeColors = {morningManager:'var(--viz-blue)', eveningManager:'var(--viz-orange)', morningCleaning:'var(--viz-aqua)', eveningCleaning:'var(--viz-yellow)'};

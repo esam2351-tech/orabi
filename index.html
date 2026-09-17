@@ -326,17 +326,17 @@
    إعدادات ثابتة
    ============================================================ */
 const PERMISSIONS_META = [
-  {key:'morningManagerChecklist', label:'تشيك ليست المدير الصباحي'},
-  {key:'eveningManagerChecklist', label:'تشيك ليست المدير المسائي'},
-  {key:'morningCleaningChecklist',label:'تشيك ليست النظافة الصباحي'},
-  {key:'eveningCleaningChecklist',label:'تشيك ليست النظافة المسائي'}
+  {key:'morningManagerChecklist', label:'Morning Manager Checklist'},
+  {key:'eveningManagerChecklist', label:'Evening Manager Checklist'},
+  {key:'morningCleaningChecklist',label:'Opening Checklist'},
+  {key:'eveningCleaningChecklist',label:'Closing Checklist'}
 ];
 
 const CHECKLIST_TYPES = [
-  {id:'morningManager',  label:'تشيك ليست المدير الصباحي', icon:'🌅', permission:'morningManagerChecklist', category:'manager', shiftLabel:'صباحي'},
-  {id:'eveningManager',  label:'تشيك ليست المدير المسائي', icon:'🌆', permission:'eveningManagerChecklist', category:'manager', shiftLabel:'مسائي'},
-  {id:'morningCleaning', label:'تشيك ليست النظافة الصباحي', icon:'🧹', permission:'morningCleaningChecklist', category:'cleaning', shiftLabel:'صباحي'},
-  {id:'eveningCleaning', label:'تشيك ليست النظافة المسائي', icon:'🌙', permission:'eveningCleaningChecklist', category:'cleaning', shiftLabel:'مسائي'}
+  {id:'morningManager',  label:'Morning Manager Checklist', icon:'🌅', permission:'morningManagerChecklist', category:'manager', shiftLabel:'صباحي'},
+  {id:'eveningManager',  label:'Evening Manager Checklist', icon:'🌆', permission:'eveningManagerChecklist', category:'manager', shiftLabel:'مسائي'},
+  {id:'morningCleaning', label:'Opening Checklist', icon:'🧹', permission:'morningCleaningChecklist', category:'cleaning', shiftLabel:'صباحي'},
+  {id:'eveningCleaning', label:'Closing Checklist', icon:'🌙', permission:'eveningCleaningChecklist', category:'cleaning', shiftLabel:'مسائي'}
 ];
 
 const CHECKLIST_CATEGORIES = [
@@ -1178,7 +1178,7 @@ function openSettings(){
     <div class="tiles">
       <div class="tile" onclick="goToScreen(()=>openSettingsEmployees())"><span class="icon">👥</span><div class="label">إدارة المستخدمين والصلاحيات</div></div>
       ${CHECKLIST_TYPES.filter(ct=> ct.id !== 'eveningManager').map(ct=>{
-        const label = ct.id === 'morningManager' ? 'تشيك ليست المدير' : ct.label;
+        const label = ct.id === 'morningManager' ? 'Manager Checklist' : ct.label;
         return `
         <div class="tile" onclick="goToScreen(()=>openSettingsChecklistItems('${ct.id}'))">
           <span class="icon">${ct.icon}</span><div class="label">بنود ${escapeHtml(label)}</div>
@@ -1251,7 +1251,7 @@ async function downloadFullBackup(){
 async function openSettingsChecklistItems(typeId){
   const meta = checklistMeta(typeId);
   const isManagerMerged = (typeId === 'morningManager' || typeId === 'eveningManager');
-  const heading = isManagerMerged ? 'تشيك ليست المدير' : meta.label;
+  const heading = isManagerMerged ? 'Manager Checklist' : meta.label;
   openInner();
   $('innerContent').innerHTML = `
     <div class="section-title"><h2>${meta.icon} بنود ${escapeHtml(heading)}</h2></div>

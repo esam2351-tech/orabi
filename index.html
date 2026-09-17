@@ -813,7 +813,7 @@ async function openChecklistLog(catId){
   const meta = categoryMeta(catId);
   const saved = (window._clLogFilters && window._clLogFilters.catId===catId) ? window._clLogFilters : null;
   const defTo = todayStr();
-  const defFrom = new Date(Date.now() - 29*86400000).toISOString().slice(0,10);
+  const defFrom = todayStr();
   $('innerContent').innerHTML = `
     <div class="section-title"><h2>${meta.icon} ${escapeHtml(meta.label)}</h2></div>
     <div class="filters">
@@ -1060,7 +1060,7 @@ function exportChecklistSubmissionExcel(id){
 async function openProblemsDashboard(){
   openInner();
   const defTo = todayStr();
-  const defFrom = new Date(Date.now() - 29*86400000).toISOString().slice(0,10);
+  const defFrom = todayStr();
   const saved = window._dashFilters || {from: defFrom, to: defTo};
   $('innerContent').innerHTML = `
     <div class="section-title"><h2>📈 Checklist Problems Dashboard</h2></div>

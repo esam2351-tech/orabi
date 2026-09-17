@@ -988,15 +988,17 @@ function renderChecklistShareCanvas(r){
 async function shareChecklistSubmissionImages(id){
   const r = (window._clSubmissionCache || {})[id];
   if(!r) return;
+  const meta = checklistMeta(r.type);
   const btn = $('clShareImgBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'جارِ تجهيز الصورة...'; }
   try{
     const canvas = await renderChecklistShareCanvas(r);
     const blob = await new Promise(res=> canvas.toBlob(res, 'image/png', 1));
-    const fileName = `تشيك_ليست_${r.date}.png`;
+    const fileName = `checklist_${r.type}_${r.date}.png`;
     const file = new File([blob], fileName, {type:'image/png'});
+    const caption = `${meta ? meta.label : 'عرابي'} — ${r.date} — سجّلها: ${r.submittedBy}`;
     if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file], title:'تشيك ليست عرابي'});
+      await navigator.share({files:[file], title:'تشيك ليست عرابي', text: caption});
     } else {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
@@ -1012,18 +1014,22 @@ async function shareChecklistSubmissionImages(id){
 async function shareChecklistSubmissionPDF(id){
   const r = (window._clSubmissionCache || {})[id];
   if(!r) return;
+  const meta = checklistMeta(r.type);
   const btn = $('clSharePdfBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'جارِ تجهيز الملف...'; }
   try{
     const canvas = await renderChecklistShareCanvas(r);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({unit:'px', format:[canvas.width, canvas.height], orientation: canvas.width>=canvas.height?'l':'p'});
-    pdf.addImage(canvas.toDataURL('image/png',1.0), 'PNG', 0, 0, canvas.width, canvas.height);
+    // JPEG بجودة عالية بدل PNG عشان حجم الملف يفضل معقول (PNG كان بيطلع الملف كبير جدًا)
+    pdf.addImage(canvas.toDataURL('image/jpeg',0.85), 'JPEG', 0, 0, canvas.width, canvas.height);
     const blob = pdf.output('blob');
-    const fileName = `تشيك_ليست_${r.date}.pdf`;
+    // اسم الملف بالإنجليزي عشان بعض التطبيقات (واتساب على أندرويد مثلاً) بتعرض أسماء الملفات العربية بشكل مشوّه
+    const fileName = `checklist_${r.type}_${r.date}.pdf`;
     const file = new File([blob], fileName, {type:'application/pdf'});
+    const caption = `${meta ? meta.label : 'عرابي'} — ${r.date} — سجّلها: ${r.submittedBy}`;
     if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file], title:'تشيك ليست عرابي'});
+      await navigator.share({files:[file], title:'تشيك ليست عرابي', text: caption});
     } else {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();

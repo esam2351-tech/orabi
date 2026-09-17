@@ -712,55 +712,81 @@ async function fetchChecklistItems(typeId){
 async function openChecklistFill(typeId){
   openInner();
   window._clCurrentType = typeId;
+  window._clExistingSubmissionId = null;
   const meta = checklistMeta(typeId);
-  const items = await fetchChecklistItems(typeId);
   $('innerContent').innerHTML = `
     <div class="section-title"><h2>${meta.icon} ${escapeHtml(meta.label)}</h2></div>
     <div class="card" style="margin-bottom:16px">
       <label>التاريخ</label>
-      <input type="date" id="clDate" value="${todayStr()}" style="max-width:200px" onchange="checkDuplicateSubmission('${typeId}')">
+      <input type="date" id="clDate" value="${todayStr()}" style="max-width:200px" onchange="renderChecklistFillItems('${typeId}')">
     </div>
     <div id="clDupNotice"></div>
+    <div id="clFillBody"><div class="empty-state">جارِ التحميل...</div></div>
+  `;
+  renderChecklistFillItems(typeId);
+}
+async function findExistingChecklistSubmission(typeId, date){
+  if(!date) return null;
+  const snap = await db.collection('checklistSubmissions')
+    .where('type','==',typeId).where('date','==',date).limit(1).get();
+  if(snap.empty) return null;
+  return {id: snap.docs[0].id, ...snap.docs[0].data()};
+}
+// بيبني/يحدّث شاشة تعبئة التشيك ليست حسب التاريخ المحدد — لو فيه تسجيل شغال عليه بالفعل
+// لنفس اليوم بيحمّل حالة كل بند (تمام/في مشكلة/ملاحظة) عشان الموظف يكمل عليه بدل ما يبدأ من الأول،
+// وده اللي بيخلي الموظف يقدر يشتغل على التشيك ليست على مدار اليوم ويحفظ تقدّمه أي وقت.
+async function renderChecklistFillItems(typeId){
+  const date = $('clDate').value;
+  const items = await fetchChecklistItems(typeId);
+  const existing = await findExistingChecklistSubmission(typeId, date);
+  window._clExistingSubmissionId = existing ? existing.id : null;
+
+  const box = $('clDupNotice');
+  if(box){
+    if(existing){
+      const time = (existing.submittedAt && existing.submittedAt.toDate) ? existing.submittedAt.toDate().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
+      const doneCount = (existing.items||[]).filter(i=>i.status && i.status!=='unset').length;
+      box.innerHTML = `<div class="setup-banner">🔄 في تقدّم متسجل بالفعل لنفس اليوم (${doneCount} من ${(existing.items||[]).length} بند)، آخر حفظ بواسطة <b>${escapeHtml(existing.submittedBy)}</b>${time?(' الساعة '+escapeHtml(time)):''}. كمّل باقي البنود واحفظ في أي وقت.</div>`;
+    } else {
+      box.innerHTML = '';
+    }
+  }
+
+  const savedByText = {};
+  (existing && existing.items || []).forEach(it=>{ savedByText[it.text] = it; });
+
+  const body = $('clFillBody');
+  if(!body) return;
+  body.innerHTML = `
     <div class="card" id="clItemsCard">
-      ${items.length ? items.map(it=>`
-        <div class="checklist-item-row" data-id="${it.id}" data-phase="${escapeHtml(it.phase||'')}">
+      ${items.length ? items.map(it=>{
+        const saved = savedByText[it.text];
+        const status = saved ? (saved.status || '') : '';
+        const metaText = (saved && saved.checkedBy) ? `${status==='bad'?'✘':'✔'} ${escapeHtml(saved.checkedBy)} — ${saved.checkedAt ? escapeHtml(new Date(saved.checkedAt).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'})) : ''}` : '';
+        return `
+        <div class="checklist-item-row" data-id="${it.id}" data-phase="${escapeHtml(it.phase||'')}" data-checked-at="${saved&&saved.checkedAt?escapeHtml(saved.checkedAt):''}" data-checked-by="${saved&&saved.checkedBy?escapeHtml(saved.checkedBy):''}">
           ${it.phase ? `<span class="phase-badge">${escapeHtml(phaseLabel(it.phase))}</span>` : ''}
           <span class="txt">${escapeHtml(it.text)}</span>
           <div class="cl-controls">
-            <div class="toggle-group">
-              <button type="button" class="toggle-btn ok-btn" onclick="toggleClItem(this,'ok')">✔ تمام</button>
-              <button type="button" class="toggle-btn bad-btn" onclick="toggleClItem(this,'bad')">✘ في مشكلة</button>
+            <div class="toggle-group"${status && status!=='unset' ? ` data-value="${status}"` : ''}>
+              <button type="button" class="toggle-btn ok-btn${status==='ok'?' active-ok':''}" onclick="toggleClItem(this,'ok')">✔ تمام</button>
+              <button type="button" class="toggle-btn bad-btn${status==='bad'?' active-bad':''}" onclick="toggleClItem(this,'bad')">✘ في مشكلة</button>
             </div>
-            <input type="text" class="item-note" placeholder="ملاحظة (اختياري)">
+            <input type="text" class="item-note" placeholder="ملاحظة (اختياري)" value="${saved&&saved.note?escapeHtml(saved.note):''}">
           </div>
-          <div class="cl-meta"></div>
+          <div class="cl-meta">${metaText}</div>
         </div>
-      `).join('') : `<div class="empty-state">لا توجد بنود مضافة لهذا التشيك ليست بعد — أضِفها من الإعدادات</div>`}
+      `;}).join('') : `<div class="empty-state">لا توجد بنود مضافة لهذا التشيك ليست بعد — أضِفها من الإعدادات</div>`}
     </div>
     ${items.length ? `
     <div class="card">
       <label>ملاحظات عامة</label>
-      <textarea id="clGeneralNotes"></textarea>
+      <textarea id="clGeneralNotes">${existing && existing.generalNotes ? escapeHtml(existing.generalNotes) : ''}</textarea>
       <div class="error-msg" id="clError"></div>
       <div class="ok-msg" id="clOk"></div>
-      <div class="btn-row"><button onclick="submitChecklist('${typeId}')">حفظ التشيك ليست</button></div>
+      <div class="btn-row"><button onclick="submitChecklist('${typeId}')">حفظ التقدّم</button></div>
     </div>` : ''}
   `;
-  checkDuplicateSubmission(typeId);
-}
-async function checkDuplicateSubmission(typeId){
-  const box = $('clDupNotice');
-  if(!box) return;
-  const date = $('clDate').value;
-  box.innerHTML = '';
-  if(!date) return;
-  const snap = await db.collection('checklistSubmissions')
-    .where('type','==',typeId).where('date','==',date).limit(1).get();
-  if(!snap.empty){
-    const d = snap.docs[0].data();
-    const time = (d.submittedAt && d.submittedAt.toDate) ? d.submittedAt.toDate().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
-    box.innerHTML = `<div class="setup-banner">⚠️ فيه تشيك ليست اتسجل بالفعل في نفس اليوم بواسطة <b>${escapeHtml(d.submittedBy)}</b>${time?(' الساعة '+escapeHtml(time)):''}. لو كملت وحفظت هيتسجل تشيك ليست تاني لنفس اليوم والشيفت.</div>`;
-  }
 }
 function toggleClItem(btn, kind){
   const group = btn.parentElement;
@@ -792,15 +818,25 @@ async function submitChecklist(typeId){
     checkedBy: row.dataset.checkedBy || null
   }));
   const err = $('clError'); err.textContent='';
-  if(items.some(i=>i.status==='unset')){ err.textContent = 'من فضلك حدد حالة كل بند (تمام / في مشكلة)'; return; }
-  await db.collection('checklistSubmissions').add({
+  const doneCount = items.filter(i=>i.status && i.status!=='unset').length;
+  if(doneCount===0){ err.textContent = 'حدد حالة بند واحد على الأقل قبل الحفظ'; return; }
+  const payload = {
     type: typeId, date,
     items, generalNotes: $('clGeneralNotes').value.trim(),
     submittedBy: state.user.username,
     submittedAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
-  $('clOk').textContent = 'تم حفظ التشيك ليست بنجاح';
-  setTimeout(()=> openChecklistFill(typeId), 1200);
+  };
+  if(window._clExistingSubmissionId){
+    await db.collection('checklistSubmissions').doc(window._clExistingSubmissionId).update(payload);
+  } else {
+    const ref = await db.collection('checklistSubmissions').add(payload);
+    window._clExistingSubmissionId = ref.id;
+  }
+  const isComplete = doneCount === items.length;
+  $('clOk').textContent = isComplete
+    ? 'تم حفظ التشيك ليست كامل بنجاح'
+    : `تم حفظ التقدّم (${doneCount} من ${items.length} بند) — تقدر تكمل الباقي بعدين النهارده`;
+  setTimeout(()=> renderChecklistFillItems(typeId), 1200);
 }
 /* ============================================================
    سجل التشيك ليست (مجمّع صباحي + مسائي لكل فئة: مدير / نظافة)

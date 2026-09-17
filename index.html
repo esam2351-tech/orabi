@@ -197,9 +197,13 @@
   .cl-card-del:hover{background:#f8d7d3;}
   .cl-card-problems{
     list-style:none; margin:0 0 12px; padding:10px 12px; background:#fdecea; border-radius:8px;
-    font-size:.82rem; color:var(--bad); line-height:1.9;
+    font-size:.82rem; color:var(--bad); line-height:1.9; counter-reset: probnum;
   }
-  .cl-card-problems li{font-weight:600;}
+  .cl-card-problems li{font-weight:600; position:relative; padding-inline-start:22px;}
+  .cl-card-problems li::before{
+    counter-increment: probnum; content: counter(probnum) "."; position:absolute;
+    inset-inline-start:0; top:0; font-weight:800;
+  }
   .cl-card-problems li .note{font-weight:400; color:#8a3a3a;}
 
   .cl-detail-actions{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;}

@@ -347,7 +347,9 @@ const CHECKLIST_CATEGORIES = [
 // تصنيف وقت تنفيذ البند (اختياري) — بيظهر كـ badge جنب البند
 const ITEM_PHASES = [
   {id:'before', label:'قبل الفتح'},
-  {id:'during', label:'أثناء التشغيل'}
+  {id:'shift_start', label:'بداية الشفت'},
+  {id:'during', label:'أثناء التشغيل'},
+  {id:'shift_end', label:'نهاية الشفت'}
 ];
 function phaseLabel(phaseId){ const p = ITEM_PHASES.find(p=>p.id===phaseId); return p ? p.label : ''; }
 
@@ -1272,14 +1274,49 @@ async function openSettingsChecklistItems(typeId){
 async function renderChecklistItemsManage(typeId){
   const docs = await fetchChecklistItemsRaw(typeId);
   const items = docs.sort((a,b)=>(a.order||0)-(b.order||0));
-  $('clItemsManageList').innerHTML = items.length ? items.map((it,idx)=>`
+  const editingId = window._clEditingItemId;
+  $('clItemsManageList').innerHTML = items.length ? items.map((it,idx)=>{
+    if(it.id === editingId){
+      return `
+      <li style="flex-wrap:wrap;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; flex:1; min-width:220px;">
+          <input type="text" id="editClItemText_${it.id}" value="${escapeHtml(it.text)}" style="flex:1; min-width:160px;">
+          <select id="editClItemPhase_${it.id}" style="max-width:160px;">
+            <option value="">بدون تصنيف وقت</option>
+            ${ITEM_PHASES.map(p=>`<option value="${p.id}" ${it.phase===p.id?'selected':''}>${escapeHtml(p.label)}</option>`).join('')}
+          </select>
+        </div>
+        <button class="small" onclick="saveChecklistItemEdit('${typeId}','${it.id}')">حفظ</button>
+        <button class="small ghost" onclick="cancelChecklistItemEdit('${typeId}')">إلغاء</button>
+      </li>`;
+    }
+    return `
     <li>
       <span class="txt">${idx+1}. ${it.phase ? `<span class="phase-badge">${escapeHtml(phaseLabel(it.phase))}</span>` : ''}${escapeHtml(it.text)}</span>
+      <button class="small ghost" onclick="startChecklistItemEdit('${typeId}','${it.id}')">✏️ تعديل</button>
       <button class="small ghost" onclick="moveChecklistItem('${typeId}','${it.id}',-1)">▲</button>
       <button class="small ghost" onclick="moveChecklistItem('${typeId}','${it.id}',1)">▼</button>
       <button class="small danger" onclick="deleteChecklistItem('${typeId}','${it.id}')">حذف</button>
-    </li>
-  `).join('') : `<div class="empty-state">لا توجد بنود بعد، أضف أول بند فوق</div>`;
+    </li>`;
+  }).join('') : `<div class="empty-state">لا توجد بنود بعد، أضف أول بند فوق</div>`;
+}
+function startChecklistItemEdit(typeId, id){
+  window._clEditingItemId = id;
+  renderChecklistItemsManage(typeId);
+}
+function cancelChecklistItemEdit(typeId){
+  window._clEditingItemId = null;
+  renderChecklistItemsManage(typeId);
+}
+async function saveChecklistItemEdit(typeId, id){
+  const textInput = $(`editClItemText_${id}`);
+  const phaseSel = $(`editClItemPhase_${id}`);
+  const text = textInput ? textInput.value.trim() : '';
+  if(!text){ alert('نص البند متقدرش يبقى فاضي'); return; }
+  const phase = phaseSel ? (phaseSel.value || null) : null;
+  await db.collection('checklistItems').doc(id).update({ text, phase });
+  window._clEditingItemId = null;
+  renderChecklistItemsManage(typeId);
 }
 async function addChecklistItem(typeId){
   const text = $('newClItemText').value.trim();

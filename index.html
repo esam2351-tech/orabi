@@ -335,13 +335,13 @@ const PERMISSIONS_META = [
 const CHECKLIST_TYPES = [
   {id:'morningManager',  label:'Morning Manager Checklist', icon:'🌅', permission:'morningManagerChecklist', category:'manager', shiftLabel:'صباحي'},
   {id:'eveningManager',  label:'Evening Manager Checklist', icon:'🌆', permission:'eveningManagerChecklist', category:'manager', shiftLabel:'مسائي'},
-  {id:'morningCleaning', label:'Opening Checklist', icon:'🧹', permission:'morningCleaningChecklist', category:'cleaning', shiftLabel:'صباحي'},
-  {id:'eveningCleaning', label:'Closing Checklist', icon:'🌙', permission:'eveningCleaningChecklist', category:'cleaning', shiftLabel:'مسائي'}
+  {id:'morningCleaning', label:'Opening Checklist', icon:'🔓', permission:'morningCleaningChecklist', category:'cleaning', shiftLabel:'صباحي'},
+  {id:'eveningCleaning', label:'Closing Checklist', icon:'🔒', permission:'eveningCleaningChecklist', category:'cleaning', shiftLabel:'مسائي'}
 ];
 
 const CHECKLIST_CATEGORIES = [
-  {id:'manager',  label:'سجل تشيك ليست المدير',  icon:'📊'},
-  {id:'cleaning', label:'سجل تشيك ليست النظافة', icon:'🧼'}
+  {id:'manager',  label:'Manager Checklist Log', icon:'📊'},
+  {id:'cleaning', label:'Checklist Log', icon:'📋'}
 ];
 
 // تصنيف وقت تنفيذ البند (اختياري) — بيظهر كـ badge جنب البند
@@ -664,8 +664,8 @@ function enterDashboard(){
     const typesInCat = CHECKLIST_TYPES.filter(t=>t.category===cat.id);
     if(typesInCat.some(t=>hasPerm(t.permission))) tiles.push({icon:cat.icon, label:cat.label, fn:()=>openChecklistLog(cat.id)});
   });
-  if(state.user.role === 'admin') tiles.push({icon:'📈', label:'لوحة مشاكل التشيك ليست', fn:()=>openProblemsDashboard()});
-  if(state.user.role === 'admin') tiles.push({icon:'⚙️', label:'الإعدادات', fn:openSettings});
+  if(state.user.role === 'admin') tiles.push({icon:'📈', label:'Checklist Problems Dashboard', fn:()=>openProblemsDashboard()});
+  if(state.user.role === 'admin') tiles.push({icon:'⚙️', label:'Settings', fn:openSettings});
 
   $('tilesContainer').innerHTML = tiles.map((t,i)=>`
     <div class="tile" onclick="dashTileClick(${i})">
@@ -1063,7 +1063,7 @@ async function openProblemsDashboard(){
   const defFrom = new Date(Date.now() - 29*86400000).toISOString().slice(0,10);
   const saved = window._dashFilters || {from: defFrom, to: defTo};
   $('innerContent').innerHTML = `
-    <div class="section-title"><h2>📈 لوحة مشاكل التشيك ليست</h2></div>
+    <div class="section-title"><h2>📈 Checklist Problems Dashboard</h2></div>
     <div class="filters">
       <div class="fld"><label>من تاريخ</label><input type="date" id="dashFrom" value="${escapeHtml(saved.from)}"></div>
       <div class="fld"><label>إلى تاريخ</label><input type="date" id="dashTo" value="${escapeHtml(saved.to)}"></div>
@@ -1174,17 +1174,17 @@ async function loadProblemsDashboard(){
 function openSettings(){
   openInner();
   $('innerContent').innerHTML = `
-    <div class="section-title"><h2>⚙️ الإعدادات</h2></div>
+    <div class="section-title"><h2>⚙️ Settings</h2></div>
     <div class="tiles">
-      <div class="tile" onclick="goToScreen(()=>openSettingsEmployees())"><span class="icon">👥</span><div class="label">إدارة المستخدمين والصلاحيات</div></div>
+      <div class="tile" onclick="goToScreen(()=>openSettingsEmployees())"><span class="icon">👥</span><div class="label">User Management &amp; Permissions</div></div>
       ${CHECKLIST_TYPES.filter(ct=> ct.id !== 'eveningManager').map(ct=>{
         const label = ct.id === 'morningManager' ? 'Manager Checklist' : ct.label;
         return `
         <div class="tile" onclick="goToScreen(()=>openSettingsChecklistItems('${ct.id}'))">
-          <span class="icon">${ct.icon}</span><div class="label">بنود ${escapeHtml(label)}</div>
+          <span class="icon">${ct.icon}</span><div class="label">${escapeHtml(label)} Items</div>
         </div>
       `;}).join('')}
-      <div class="tile" onclick="downloadFullBackup()"><span class="icon">💾</span><div class="label">تنزيل نسخة احتياطية</div></div>
+      <div class="tile" onclick="downloadFullBackup()"><span class="icon">💾</span><div class="label">Download Backup</div></div>
     </div>
   `;
 }
@@ -1254,7 +1254,7 @@ async function openSettingsChecklistItems(typeId){
   const heading = isManagerMerged ? 'Manager Checklist' : meta.label;
   openInner();
   $('innerContent').innerHTML = `
-    <div class="section-title"><h2>${meta.icon} بنود ${escapeHtml(heading)}</h2></div>
+    <div class="section-title"><h2>${meta.icon} ${escapeHtml(heading)} Items</h2></div>
     ${isManagerMerged ? `<p style="color:var(--muted); font-size:.85rem; margin:-8px 0 16px;">البنود دي واحدة مشتركة وهتظهر في تشيك ليست المدير الصباحي والمسائي مع بعض.</p>` : ''}
     <div class="card">
       <div class="btn-row" style="margin-top:0; flex-wrap:wrap;">
@@ -1352,7 +1352,7 @@ async function moveChecklistItem(typeId, id, dir){
 async function openSettingsEmployees(){
   openInner();
   $('innerContent').innerHTML = `
-    <div class="section-title"><h2>👥 إدارة المستخدمين والصلاحيات</h2></div>
+    <div class="section-title"><h2>👥 User Management &amp; Permissions</h2></div>
     <div class="card" id="empFormCard"></div>
     <div class="card table-wrap" id="empListTable"><div class="empty-state">جاري التحميل...</div></div>
     <button class="ghost" onclick="history.back()" style="margin-top:16px">‹ رجوع للإعدادات</button>

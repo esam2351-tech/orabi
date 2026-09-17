@@ -351,18 +351,6 @@ const ITEM_PHASES = [
 ];
 function phaseLabel(phaseId){ const p = ITEM_PHASES.find(p=>p.id===phaseId); return p ? p.label : ''; }
 
-// بنود أساسية جاهزة للاستيراد بضغطة واحدة بدل ما تتكتب واحد واحد
-const DEFAULT_MORNING_CLEANING_ITEMS = [
-  {text:'تم فحص المطبخ صباحًا حسب الـ SOP المتبع لذلك', phase:'before'},
-  {text:'التأكد من حالة الأطباق، بطاقة الكافيه، الفار، الأواني، الأكواب', phase:'before'},
-  {text:'مراجعة الجرد ومطابقته للخدمات الموجودة وتسجيل أي ملاحظات', phase:'before'},
-  {text:'التأكد من تجهيز الهوية الإلكترونية (هاف - هاف) على نقل البيانات', phase:'before'},
-  {text:'التأكد من تشغيل ماكينة الكاشير و POS', phase:'before'},
-  {text:'التأكد من تشغيل الأجهزة التي تظهر بها POS والكاشير (الأفلام والإغلاق)', phase:'before'},
-  {text:'فحص درجات الحرارة لجميع الثلاجات (الفريزرات - الثلاجات)', phase:'before'},
-  {text:'فحص برنامج الموظفين لضمان سلامة الإجراءات وتسجيل الحضور', phase:'before'}
-];
-
 /* ============================================================
    إعداد Firebase — استبدل القيم دي ببيانات مشروعك الحقيقية
    (Firebase Console → Project settings → SDK setup and configuration)
@@ -1275,7 +1263,6 @@ async function openSettingsChecklistItems(typeId){
         </select>
         <button onclick="addChecklistItem('${typeId}')">إضافة بند</button>
       </div>
-      ${typeId === 'morningCleaning' ? `<button class="secondary" style="margin-top:10px" onclick="importDefaultCleaningItems()">⬇️ استيراد البنود الأساسية (${DEFAULT_MORNING_CLEANING_ITEMS.length} بنود)</button>` : ''}
     </div>
     <div class="card"><ul class="manage-list" id="clItemsManageList"></ul></div>
     <button class="ghost" onclick="history.back()" style="margin-top:16px">‹ رجوع للإعدادات</button>
@@ -1303,22 +1290,6 @@ async function addChecklistItem(typeId){
   const maxOrder = docs.reduce((m,it)=>Math.max(m, it.order||0), 0);
   await db.collection('checklistItems').add({ type: checklistItemsWriteType(typeId), text, phase, order: maxOrder+1, active:true });
   $('newClItemText').value='';
-  renderChecklistItemsManage(typeId);
-}
-async function importDefaultCleaningItems(){
-  const typeId = 'morningCleaning';
-  const docs = await fetchChecklistItemsRaw(typeId);
-  const existingTexts = new Set(docs.map(d=>d.text));
-  let maxOrder = docs.reduce((m,it)=>Math.max(m, it.order||0), 0);
-  const toAdd = DEFAULT_MORNING_CLEANING_ITEMS.filter(d=>!existingTexts.has(d.text));
-  if(!toAdd.length){ alert('البنود الأساسية دي متضافة بالفعل'); return; }
-  const batch = db.batch();
-  toAdd.forEach(d=>{
-    maxOrder += 1;
-    const ref = db.collection('checklistItems').doc();
-    batch.set(ref, { type: checklistItemsWriteType(typeId), text: d.text, phase: d.phase, order: maxOrder, active:true });
-  });
-  await batch.commit();
   renderChecklistItemsManage(typeId);
 }
 async function deleteChecklistItem(typeId, id){

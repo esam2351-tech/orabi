@@ -146,6 +146,11 @@
   @media (max-width:640px){
     .item-note{width:100%;}
   }
+  .phase-badge{
+    display:inline-block; align-self:flex-start; padding:2px 10px; border-radius:20px; font-size:.72rem; font-weight:700;
+    background:var(--brand-light); color:var(--brand-dark); margin-inline-end:6px;
+  }
+  .cl-meta{font-size:.76rem; color:var(--muted); margin-top:-2px;}
 
   .manage-list li{
     display:flex; align-items:center; gap:10px; padding:8px 6px; border-bottom:1px solid var(--border);
@@ -201,17 +206,18 @@
   .cl-detail-actions button{flex:1; min-width:130px;}
 
   .cl-item-view{
-    display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--border);
+    display:flex; align-items:flex-start; gap:10px; padding:10px; border:1px solid var(--border);
     border-radius:10px; margin-bottom:8px; background:#fff;
   }
   .cl-item-view .st{
     width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    font-size:.85rem; font-weight:800; flex-shrink:0; color:#fff;
+    font-size:.85rem; font-weight:800; flex-shrink:0; color:#fff; margin-top:2px;
   }
   .cl-item-view .st.ok{background:var(--ok);}
   .cl-item-view .st.bad{background:var(--bad);}
-  .cl-item-view .txt{flex:1; font-weight:600;}
-  .cl-item-view .note{color:var(--muted); font-size:.82rem;}
+  .cl-item-view .body{flex:1; min-width:0;}
+  .cl-item-view .txt{font-weight:600; line-height:1.5;}
+  .cl-item-view .note{color:var(--muted); font-size:.82rem; margin-top:3px;}
 
   /* ---------- لوحة مشاكل التشيك ليست ---------- */
   .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:20px;}
@@ -336,6 +342,25 @@ const CHECKLIST_TYPES = [
 const CHECKLIST_CATEGORIES = [
   {id:'manager',  label:'سجل تشيك ليست المدير',  icon:'📊'},
   {id:'cleaning', label:'سجل تشيك ليست النظافة', icon:'🧼'}
+];
+
+// تصنيف وقت تنفيذ البند (اختياري) — بيظهر كـ badge جنب البند
+const ITEM_PHASES = [
+  {id:'before', label:'قبل الفتح'},
+  {id:'during', label:'أثناء التشغيل'}
+];
+function phaseLabel(phaseId){ const p = ITEM_PHASES.find(p=>p.id===phaseId); return p ? p.label : ''; }
+
+// بنود أساسية جاهزة للاستيراد بضغطة واحدة بدل ما تتكتب واحد واحد
+const DEFAULT_MORNING_CLEANING_ITEMS = [
+  {text:'تم فحص المطبخ صباحًا حسب الـ SOP المتبع لذلك', phase:'before'},
+  {text:'التأكد من حالة الأطباق، بطاقة الكافيه، الفار، الأواني، الأكواب', phase:'before'},
+  {text:'مراجعة الجرد ومطابقته للخدمات الموجودة وتسجيل أي ملاحظات', phase:'before'},
+  {text:'التأكد من تجهيز الهوية الإلكترونية (هاف - هاف) على نقل البيانات', phase:'before'},
+  {text:'التأكد من تشغيل ماكينة الكاشير و POS', phase:'before'},
+  {text:'التأكد من تشغيل الأجهزة التي تظهر بها POS والكاشير (الأفلام والإغلاق)', phase:'before'},
+  {text:'فحص درجات الحرارة لجميع الثلاجات (الفريزرات - الثلاجات)', phase:'before'},
+  {text:'فحص برنامج الموظفين لضمان سلامة الإجراءات وتسجيل الحضور', phase:'before'}
 ];
 
 /* ============================================================
@@ -708,7 +733,8 @@ async function openChecklistFill(typeId){
     <div id="clDupNotice"></div>
     <div class="card" id="clItemsCard">
       ${items.length ? items.map(it=>`
-        <div class="checklist-item-row" data-id="${it.id}">
+        <div class="checklist-item-row" data-id="${it.id}" data-phase="${escapeHtml(it.phase||'')}">
+          ${it.phase ? `<span class="phase-badge">${escapeHtml(phaseLabel(it.phase))}</span>` : ''}
           <span class="txt">${escapeHtml(it.text)}</span>
           <div class="cl-controls">
             <div class="toggle-group">
@@ -717,6 +743,7 @@ async function openChecklistFill(typeId){
             </div>
             <input type="text" class="item-note" placeholder="ملاحظة (اختياري)">
           </div>
+          <div class="cl-meta"></div>
         </div>
       `).join('') : `<div class="empty-state">لا توجد بنود مضافة لهذا التشيك ليست بعد — أضِفها من الإعدادات</div>`}
     </div>
@@ -747,9 +774,21 @@ async function checkDuplicateSubmission(typeId){
 }
 function toggleClItem(btn, kind){
   const group = btn.parentElement;
+  const row = group.closest('.checklist-item-row');
   group.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active-ok','active-bad'));
   btn.classList.add(kind==='ok' ? 'active-ok' : 'active-bad');
   group.dataset.value = kind;
+  // تسجيل تلقائي لوقت واسم اللي علّم على البند، من غير أي إدخال يدوي
+  if(row){
+    const now = new Date();
+    row.dataset.checkedAt = now.toISOString();
+    row.dataset.checkedBy = (state.user && state.user.username) || '';
+    const meta = row.querySelector('.cl-meta');
+    if(meta){
+      const timeStr = now.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'});
+      meta.textContent = `${kind==='ok' ? '✔' : '✘'} ${row.dataset.checkedBy} — ${timeStr}`;
+    }
+  }
 }
 async function submitChecklist(typeId){
   const date = $('clDate').value;
@@ -757,7 +796,10 @@ async function submitChecklist(typeId){
   const items = rows.map(row=>({
     text: row.querySelector('.txt').textContent,
     status: row.querySelector('.toggle-group').dataset.value || 'unset',
-    note: row.querySelector('.item-note').value.trim()
+    note: row.querySelector('.item-note').value.trim(),
+    phase: row.dataset.phase || null,
+    checkedAt: row.dataset.checkedAt || null,
+    checkedBy: row.dataset.checkedBy || null
   }));
   const err = $('clError'); err.textContent='';
   if(items.some(i=>i.status==='unset')){ err.textContent = 'من فضلك حدد حالة كل بند (تمام / في مشكلة)'; return; }
@@ -869,13 +911,19 @@ function openChecklistSubmissionDetail(catId, id){
       <p style="margin:0;color:var(--muted);font-size:.85rem;">سجّلها: ${escapeHtml(r.submittedBy)} · ${problems.length ? problems.length+' بند فيه مشكلة' : 'كل البنود سليمة'}</p>
     </div>
     <div class="card">
-      ${(r.items||[]).map(it=>`
+      ${(r.items||[]).map(it=>{
+        const timeStr = it.checkedAt ? new Date(it.checkedAt).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
+        return `
         <div class="cl-item-view">
           <span class="st ${it.status==='bad'?'bad':'ok'}">${it.status==='bad'?'✗':'✓'}</span>
-          <span class="txt">${escapeHtml(it.text)}</span>
-          ${it.note ? `<span class="note">${escapeHtml(it.note)}</span>` : ''}
+          <div class="body">
+            ${it.phase ? `<span class="phase-badge">${escapeHtml(phaseLabel(it.phase))}</span>` : ''}
+            <span class="txt">${escapeHtml(it.text)}</span>
+            ${it.note ? `<div class="note">${escapeHtml(it.note)}</div>` : ''}
+            ${(it.checkedBy || timeStr) ? `<div class="cl-meta">${escapeHtml(it.checkedBy||'')}${(it.checkedBy && timeStr) ? ' — ' : ''}${escapeHtml(timeStr)}</div>` : ''}
+          </div>
         </div>
-      `).join('')}
+      `;}).join('')}
     </div>
     ${r.generalNotes ? `<div class="card"><label style="margin-top:0">ملاحظات عامة</label><p style="margin:6px 0 0;">${escapeHtml(r.generalNotes)}</p></div>` : ''}
   `;
@@ -894,8 +942,11 @@ function buildChecklistShareHTML(r){
   const logoSrc = logoImg ? logoImg.src : '';
   const rows = (r.items||[]).map(it=>{
     const ok = it.status !== 'bad';
+    const timeStr = it.checkedAt ? new Date(it.checkedAt).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
+    const metaLine = (it.checkedBy || timeStr) ? `<div style="font-weight:400;font-size:11px;color:#8a8a8a;margin-top:2px;">${escapeHtml(it.checkedBy||'')}${(it.checkedBy&&timeStr)?' — ':''}${escapeHtml(timeStr)}</div>` : '';
+    const phaseTag = it.phase ? `<span style="display:inline-block;font-size:10px;font-weight:700;color:#8f3009;background:#ffe9dd;border-radius:12px;padding:1px 8px;margin-inline-end:6px;">${escapeHtml(phaseLabel(it.phase))}</span>` : '';
     return `<tr style="border-top:1px solid #eee;">
-      <td style="padding:9px 10px;font-weight:800;color:${ok?'#222':'#c62828'};">${escapeHtml(it.text)}</td>
+      <td style="padding:9px 10px;font-weight:800;color:${ok?'#222':'#c62828'};">${phaseTag}${escapeHtml(it.text)}${metaLine}</td>
       <td style="padding:9px 6px;text-align:center;width:36px;font-size:18px;">${ok?'✅':'❌'}</td>
       <td style="padding:9px 8px;font-size:13px;color:#c62828;text-align:center;">${it.note?escapeHtml(it.note):'—'}</td>
     </tr>`;
@@ -999,13 +1050,15 @@ function exportChecklistSubmissionExcel(id){
   if(!r) return;
   const meta = checklistMeta(r.type);
   const rows = [
-    {البند:'التاريخ', الحالة:r.date, ملاحظة:''},
-    {البند:'الفترة', الحالة:r.shiftLabel, ملاحظة:''},
-    {البند:'سجّلها', الحالة:r.submittedBy, ملاحظة:''},
+    {البند:'التاريخ', الحالة:r.date, ملاحظة:'', المسؤول:'', التوقيت:''},
+    {البند:'الفترة', الحالة:r.shiftLabel, ملاحظة:'', المسؤول:'', التوقيت:''},
+    {البند:'سجّلها', الحالة:r.submittedBy, ملاحظة:'', المسؤول:'', التوقيت:''},
     ...(r.items||[]).map(it=>({
-      البند: it.text,
+      البند: (it.phase ? `[${phaseLabel(it.phase)}] ` : '') + it.text,
       الحالة: it.status==='bad' ? 'في مشكلة' : 'تمام',
-      ملاحظة: it.note || ''
+      ملاحظة: it.note || '',
+      المسؤول: it.checkedBy || '',
+      التوقيت: it.checkedAt ? new Date(it.checkedAt).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : ''
     }))
   ];
   downloadExcel(rows, `تشيك_ليست_${meta?meta.label.replace(/\s+/g,'_'):''}_${r.date}.xlsx`, 'التشيك ليست');
@@ -1214,10 +1267,15 @@ async function openSettingsChecklistItems(typeId){
     <div class="section-title"><h2>${meta.icon} بنود ${escapeHtml(heading)}</h2></div>
     ${isManagerMerged ? `<p style="color:var(--muted); font-size:.85rem; margin:-8px 0 16px;">البنود دي واحدة مشتركة وهتظهر في تشيك ليست المدير الصباحي والمسائي مع بعض.</p>` : ''}
     <div class="card">
-      <div class="btn-row" style="margin-top:0">
-        <input type="text" id="newClItemText" placeholder="نص البند الجديد" style="flex:1">
+      <div class="btn-row" style="margin-top:0; flex-wrap:wrap;">
+        <input type="text" id="newClItemText" placeholder="نص البند الجديد" style="flex:1; min-width:180px;">
+        <select id="newClItemPhase" style="max-width:160px;">
+          <option value="">بدون تصنيف وقت</option>
+          ${ITEM_PHASES.map(p=>`<option value="${p.id}">${escapeHtml(p.label)}</option>`).join('')}
+        </select>
         <button onclick="addChecklistItem('${typeId}')">إضافة بند</button>
       </div>
+      ${typeId === 'morningCleaning' ? `<button class="secondary" style="margin-top:10px" onclick="importDefaultCleaningItems()">⬇️ استيراد البنود الأساسية (${DEFAULT_MORNING_CLEANING_ITEMS.length} بنود)</button>` : ''}
     </div>
     <div class="card"><ul class="manage-list" id="clItemsManageList"></ul></div>
     <button class="ghost" onclick="history.back()" style="margin-top:16px">‹ رجوع للإعدادات</button>
@@ -1229,7 +1287,7 @@ async function renderChecklistItemsManage(typeId){
   const items = docs.sort((a,b)=>(a.order||0)-(b.order||0));
   $('clItemsManageList').innerHTML = items.length ? items.map((it,idx)=>`
     <li>
-      <span class="txt">${idx+1}. ${escapeHtml(it.text)}</span>
+      <span class="txt">${idx+1}. ${it.phase ? `<span class="phase-badge">${escapeHtml(phaseLabel(it.phase))}</span>` : ''}${escapeHtml(it.text)}</span>
       <button class="small ghost" onclick="moveChecklistItem('${typeId}','${it.id}',-1)">▲</button>
       <button class="small ghost" onclick="moveChecklistItem('${typeId}','${it.id}',1)">▼</button>
       <button class="small danger" onclick="deleteChecklistItem('${typeId}','${it.id}')">حذف</button>
@@ -1239,10 +1297,28 @@ async function renderChecklistItemsManage(typeId){
 async function addChecklistItem(typeId){
   const text = $('newClItemText').value.trim();
   if(!text) return;
+  const phaseSel = $('newClItemPhase');
+  const phase = phaseSel ? (phaseSel.value || null) : null;
   const docs = await fetchChecklistItemsRaw(typeId);
   const maxOrder = docs.reduce((m,it)=>Math.max(m, it.order||0), 0);
-  await db.collection('checklistItems').add({ type: checklistItemsWriteType(typeId), text, order: maxOrder+1, active:true });
+  await db.collection('checklistItems').add({ type: checklistItemsWriteType(typeId), text, phase, order: maxOrder+1, active:true });
   $('newClItemText').value='';
+  renderChecklistItemsManage(typeId);
+}
+async function importDefaultCleaningItems(){
+  const typeId = 'morningCleaning';
+  const docs = await fetchChecklistItemsRaw(typeId);
+  const existingTexts = new Set(docs.map(d=>d.text));
+  let maxOrder = docs.reduce((m,it)=>Math.max(m, it.order||0), 0);
+  const toAdd = DEFAULT_MORNING_CLEANING_ITEMS.filter(d=>!existingTexts.has(d.text));
+  if(!toAdd.length){ alert('البنود الأساسية دي متضافة بالفعل'); return; }
+  const batch = db.batch();
+  toAdd.forEach(d=>{
+    maxOrder += 1;
+    const ref = db.collection('checklistItems').doc();
+    batch.set(ref, { type: checklistItemsWriteType(typeId), text: d.text, phase: d.phase, order: maxOrder, active:true });
+  });
+  await batch.commit();
   renderChecklistItemsManage(typeId);
 }
 async function deleteChecklistItem(typeId, id){

@@ -130,20 +130,20 @@
   .filters label{margin:0 0 6px;}
 
   .checklist-item-row{
-    display:flex; align-items:center; gap:12px; padding:12px 10px; border:1px solid var(--border);
-    border-radius:10px; margin-bottom:8px; background:#fff;
+    display:flex; flex-direction:column; gap:10px; padding:14px 14px; border:1px solid var(--border);
+    border-radius:10px; margin-bottom:10px; background:#fff;
   }
-  .checklist-item-row .txt{flex:1; font-weight:600;}
-  .toggle-group{display:flex; gap:6px;}
+  .checklist-item-row .txt{font-weight:600; line-height:1.55; white-space:normal;}
+  .checklist-item-row .cl-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .toggle-group{display:flex; gap:6px; flex-shrink:0;}
   .toggle-btn{
     border:1px solid var(--border); background:#fff; color:var(--muted); padding:6px 14px; border-radius:8px;
-    cursor:pointer; font-size:.82rem; font-weight:600;
+    cursor:pointer; font-size:.82rem; font-weight:600; white-space:nowrap;
   }
   .toggle-btn.active-ok{background:var(--ok); color:#fff; border-color:var(--ok);}
   .toggle-btn.active-bad{background:var(--bad); color:#fff; border-color:var(--bad);}
-  .item-note{width:160px;}
+  .item-note{flex:1; min-width:140px;}
   @media (max-width:640px){
-    .checklist-item-row{flex-wrap:wrap;}
     .item-note{width:100%;}
   }
 
@@ -671,9 +671,25 @@ function goDashboard(){ goHome(); }
    ============================================================ */
 function checklistMeta(typeId){ return CHECKLIST_TYPES.find(c=>c.id===typeId); }
 
+// بنود تشيك ليست المدير (صباحي/مسائي) بقت قائمة واحدة مشتركة، بنخزنها تحت النوع ده
+const MANAGER_SHARED_TYPE = 'morningManager';
+const MANAGER_MERGED_TYPES = ['morningManager','eveningManager'];
+function checklistItemsTypesFor(typeId){
+  return (typeId === 'morningManager' || typeId === 'eveningManager') ? MANAGER_MERGED_TYPES : [typeId];
+}
+function checklistItemsWriteType(typeId){
+  return (typeId === 'morningManager' || typeId === 'eveningManager') ? MANAGER_SHARED_TYPE : typeId;
+}
+async function fetchChecklistItemsRaw(typeId){
+  const types = checklistItemsTypesFor(typeId);
+  const snaps = await Promise.all(types.map(t=> db.collection('checklistItems').where('type','==',t).get()));
+  const docs = [];
+  snaps.forEach(snap=> snap.docs.forEach(d=> docs.push({id:d.id,...d.data()})));
+  return docs;
+}
 async function fetchChecklistItems(typeId){
-  const snap = await db.collection('checklistItems').where('type','==',typeId).get();
-  return snap.docs.map(d=>({id:d.id,...d.data()}))
+  const docs = await fetchChecklistItemsRaw(typeId);
+  return docs
     .filter(i=>i.active !== false)
     .sort((a,b)=>(a.order||0)-(b.order||0));
 }
@@ -694,11 +710,13 @@ async function openChecklistFill(typeId){
       ${items.length ? items.map(it=>`
         <div class="checklist-item-row" data-id="${it.id}">
           <span class="txt">${escapeHtml(it.text)}</span>
-          <div class="toggle-group">
-            <button type="button" class="toggle-btn ok-btn" onclick="toggleClItem(this,'ok')">✔ تمام</button>
-            <button type="button" class="toggle-btn bad-btn" onclick="toggleClItem(this,'bad')">✘ في مشكلة</button>
+          <div class="cl-controls">
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn ok-btn" onclick="toggleClItem(this,'ok')">✔ تمام</button>
+              <button type="button" class="toggle-btn bad-btn" onclick="toggleClItem(this,'bad')">✘ في مشكلة</button>
+            </div>
+            <input type="text" class="item-note" placeholder="ملاحظة (اختياري)">
           </div>
-          <input type="text" class="item-note" placeholder="ملاحظة (اختياري)">
         </div>
       `).join('') : `<div class="empty-state">لا توجد بنود مضافة لهذا التشيك ليست بعد — أضِفها من الإعدادات</div>`}
     </div>
@@ -1116,11 +1134,13 @@ function openSettings(){
     <div class="section-title"><h2>⚙️ الإعدادات</h2></div>
     <div class="tiles">
       <div class="tile" onclick="goToScreen(()=>openSettingsEmployees())"><span class="icon">👥</span><div class="label">إدارة المستخدمين والصلاحيات</div></div>
-      ${CHECKLIST_TYPES.map(ct=>`
+      ${CHECKLIST_TYPES.filter(ct=> ct.id !== 'eveningManager').map(ct=>{
+        const label = ct.id === 'morningManager' ? 'تشيك ليست المدير' : ct.label;
+        return `
         <div class="tile" onclick="goToScreen(()=>openSettingsChecklistItems('${ct.id}'))">
-          <span class="icon">${ct.icon}</span><div class="label">بنود ${escapeHtml(ct.label)}</div>
+          <span class="icon">${ct.icon}</span><div class="label">بنود ${escapeHtml(label)}</div>
         </div>
-      `).join('')}
+      `;}).join('')}
       <div class="tile" onclick="downloadFullBackup()"><span class="icon">💾</span><div class="label">تنزيل نسخة احتياطية</div></div>
     </div>
   `;
@@ -1187,9 +1207,12 @@ async function downloadFullBackup(){
 /* ---------- إدارة بنود التشيك ليست ---------- */
 async function openSettingsChecklistItems(typeId){
   const meta = checklistMeta(typeId);
+  const isManagerMerged = (typeId === 'morningManager' || typeId === 'eveningManager');
+  const heading = isManagerMerged ? 'تشيك ليست المدير' : meta.label;
   openInner();
   $('innerContent').innerHTML = `
-    <div class="section-title"><h2>${meta.icon} بنود ${escapeHtml(meta.label)}</h2></div>
+    <div class="section-title"><h2>${meta.icon} بنود ${escapeHtml(heading)}</h2></div>
+    ${isManagerMerged ? `<p style="color:var(--muted); font-size:.85rem; margin:-8px 0 16px;">البنود دي واحدة مشتركة وهتظهر في تشيك ليست المدير الصباحي والمسائي مع بعض.</p>` : ''}
     <div class="card">
       <div class="btn-row" style="margin-top:0">
         <input type="text" id="newClItemText" placeholder="نص البند الجديد" style="flex:1">
@@ -1202,8 +1225,8 @@ async function openSettingsChecklistItems(typeId){
   renderChecklistItemsManage(typeId);
 }
 async function renderChecklistItemsManage(typeId){
-  const snap = await db.collection('checklistItems').where('type','==',typeId).get();
-  const items = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
+  const docs = await fetchChecklistItemsRaw(typeId);
+  const items = docs.sort((a,b)=>(a.order||0)-(b.order||0));
   $('clItemsManageList').innerHTML = items.length ? items.map((it,idx)=>`
     <li>
       <span class="txt">${idx+1}. ${escapeHtml(it.text)}</span>
@@ -1216,9 +1239,9 @@ async function renderChecklistItemsManage(typeId){
 async function addChecklistItem(typeId){
   const text = $('newClItemText').value.trim();
   if(!text) return;
-  const snap = await db.collection('checklistItems').where('type','==',typeId).get();
-  const maxOrder = snap.docs.reduce((m,d)=>Math.max(m, d.data().order||0), 0);
-  await db.collection('checklistItems').add({ type: typeId, text, order: maxOrder+1, active:true });
+  const docs = await fetchChecklistItemsRaw(typeId);
+  const maxOrder = docs.reduce((m,it)=>Math.max(m, it.order||0), 0);
+  await db.collection('checklistItems').add({ type: checklistItemsWriteType(typeId), text, order: maxOrder+1, active:true });
   $('newClItemText').value='';
   renderChecklistItemsManage(typeId);
 }
@@ -1228,8 +1251,8 @@ async function deleteChecklistItem(typeId, id){
   renderChecklistItemsManage(typeId);
 }
 async function moveChecklistItem(typeId, id, dir){
-  const snap = await db.collection('checklistItems').where('type','==',typeId).get();
-  const items = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
+  const docs = await fetchChecklistItemsRaw(typeId);
+  const items = docs.sort((a,b)=>(a.order||0)-(b.order||0));
   const idx = items.findIndex(i=>i.id===id);
   const swapIdx = idx + dir;
   if(swapIdx < 0 || swapIdx >= items.length) return;

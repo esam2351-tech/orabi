@@ -1270,10 +1270,21 @@ function buildComplaintShareHTML(r){
   const logoImg = document.querySelector('.app-logo, .header-logo');
   const logoSrc = logoImg ? logoImg.src : '';
   const status = r.status || 'in_progress';
-  const rows = [
+  const statusBg = status==='resolved' ? '#e6f6ec' : '#fdecea';
+  const statusColor = status==='resolved' ? '#1f8a4c' : '#c62828';
+  const statusLabel = status==='resolved' ? 'تم الحل' : 'قيد المتابعة';
+
+  const infoBox = (icon, iconBg, label, value)=>`
+    <div style="flex:1;background:#fff;border:1px solid #eee0d3;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;">
+      <span style="width:34px;height:34px;flex-shrink:0;border-radius:50%;background:${iconBg};display:flex;align-items:center;justify-content:center;font-size:16px;">${icon}</span>
+      <div style="min-width:0;">
+        <div style="font-size:11px;color:#8a8a8a;">${escapeHtml(label)}</div>
+        <div style="font-weight:800;font-size:14px;overflow-wrap:anywhere;">${escapeHtml(value||'—')}</div>
+      </div>
+    </div>`;
+
+  const sectionRows = [
     ['رقم الأوردر', r.orderNumber],
-    ['اسم العميل', r.customerName],
-    ['رقم التليفون', r.phone],
     ['نوع الطلب', r.requestType],
     ['الشكوى', r.complaintText],
     ['التواصل', r.contactChannel],
@@ -1281,26 +1292,41 @@ function buildComplaintShareHTML(r){
     ['التعويض', r.compensation],
     ['متابعة Feedback', r.feedbackFollowup]
   ].filter(([,v])=> v);
-  const rowsHtml = rows.map(([label,val])=>`
-    <tr style="border-top:1px solid #eee;">
-      <td style="padding:9px 10px;font-weight:800;color:#222;width:150px;vertical-align:top;">${escapeHtml(label)}</td>
-      <td style="padding:9px 10px;color:#444;">${escapeHtml(val)}</td>
-    </tr>`).join('');
-  return `<div style="font-family:Tahoma,Arial,sans-serif;direction:rtl;width:700px;background:#faf6f2;padding:26px 30px;color:#222;box-sizing:border-box;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-      ${logoSrc?`<img src="${logoSrc}" style="width:40px;height:40px;border-radius:9px;object-fit:cover;">`:''}
-      <div>
-        <div style="font-weight:900;font-size:19px;color:#014D40;">عرابي</div>
-        <div style="font-size:11px;color:#8a8a8a;">شكوى عميل — ${escapeHtml(r.date||'')}</div>
+  const sectionsHtml = sectionRows.map(([label,val], i)=>`
+    <div style="padding:14px 0;${i < sectionRows.length-1 ? 'border-bottom:1px solid #f1ece5;' : ''}">
+      <div style="font-size:11px;color:#8a8a8a;margin-bottom:4px;">${escapeHtml(label)}</div>
+      <div style="font-weight:700;font-size:14px;line-height:1.7;">${escapeHtml(val)}</div>
+    </div>`).join('');
+
+  return `<div style="font-family:'Segoe UI',Tahoma,Arial,sans-serif;direction:rtl;width:720px;background:#faf6f2;color:#222;box-sizing:border-box;border-radius:18px;overflow:hidden;">
+    <div style="padding:26px 30px 22px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:22px;">
+        <span style="display:inline-block;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:800;background:${statusBg};color:${statusColor};white-space:nowrap;">${statusLabel}</span>
+        <div style="text-align:center;flex:1;">
+          <div style="font-weight:800;font-size:18px;color:#333;">📋 شكوى عميل</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="text-align:center;">
+            <div style="font-weight:900;font-size:22px;color:#014D40;line-height:1.15;">عرابي</div>
+            <div style="font-size:9px;letter-spacing:2px;color:#9a9a9a;font-weight:700;">ARABI</div>
+          </div>
+          ${logoSrc?`<img src="${logoSrc}" style="width:44px;height:44px;border-radius:11px;object-fit:cover;">`:''}
+        </div>
       </div>
-      <div style="margin-inline-start:auto;">
-        <span style="display:inline-block;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:800;background:${status==='resolved'?'#e6f6ec':'#fdecea'};color:${status==='resolved'?'#1f8a4c':'#c62828'};">${status==='resolved'?'تم الحل':'قيد المتابعة'}</span>
+
+      <div style="display:flex;gap:12px;margin-bottom:18px;">
+        ${infoBox('🧑','#e8f0fb','العميل', r.customerName)}
+        ${infoBox('📞','#fdece3','الموبايل', r.phone)}
+        ${infoBox('📅','#fdecea','التاريخ', r.date)}
       </div>
+
+      ${sectionRows.length ? `<div style="background:#fff;border:1px solid #eee0d3;border-radius:14px;padding:2px 20px;">${sectionsHtml}</div>` : ''}
+
+      <div style="margin-top:14px;font-size:12px;color:#8a8a8a;">سجّلها: ${escapeHtml(r.date||'')} · ${escapeHtml(r.submittedBy||'')}</div>
     </div>
-    <div style="border:1px solid #eee0d3;border-radius:10px;overflow:hidden;background:#fff;">
-      <table style="width:100%;border-collapse:collapse;font-size:13px;"><tbody>${rowsHtml}</tbody></table>
+    <div style="background:#014D40;padding:14px;text-align:center;">
+      <span style="color:#fff;font-weight:900;font-size:16px;letter-spacing:1px;">عرابي</span>
     </div>
-    <div style="margin-top:12px;font-size:12px;color:#8a8a8a;">سجّلها: ${escapeHtml(r.submittedBy||'')}</div>
   </div>`;
 }
 function renderComplaintShareCanvas(r){

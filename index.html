@@ -1108,22 +1108,18 @@ function exportChecklistSubmissionExcel(id){
    شكاوى العملاء (Customer Complaints)
    ============================================================ */
 const COMPLAINT_FIELDS = [
-  {key:'customerName',   label:'اسم العميل',            type:'text'},
-  {key:'phone',          label:'رقم التليفون',           type:'text'},
-  {key:'category',       label:'الصنف',                 type:'taxonomy', taxType:'category'},
-  {key:'invoiceDate',    label:'تاريخ الفاتورة',         type:'date'},
-  {key:'itemDetails',    label:'تفاصيل الصنف',          type:'textarea'},
-  {key:'problemText',    label:'المشكلة',               type:'textarea'},
-  {key:'department',     label:'القسم المُحال إليه',     type:'taxonomy', taxType:'department'},
-  {key:'actionTaken',    label:'الإجراء المتخذ',         type:'textarea'}
+  {key:'orderNumber',      label:'رقم الأوردر',      type:'text'},
+  {key:'customerName',     label:'اسم العميل',       type:'text'},
+  {key:'phone',            label:'رقم التليفون',      type:'text'},
+  {key:'complaintText',    label:'الشكوى',           type:'textarea'},
+  {key:'requestType',      label:'نوع الطلب',        type:'taxonomy', taxType:'requestType'},
+  {key:'contactChannel',   label:'التواصل',          type:'text'},
+  {key:'response',         label:'الرد',             type:'textarea'},
+  {key:'compensation',     label:'التعويض',          type:'text'},
+  {key:'feedbackFollowup', label:'متابعة Feedback',  type:'textarea'}
 ];
 const COMPLAINT_MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 
-function waLink(phone){
-  const digits = String(phone||'').replace(/[^\d]/g,'');
-  const intl = digits.startsWith('0') ? '2'+digits : digits; // مصر: تحويل 0xxxxxxxxxx لـ 20xxxxxxxxxx
-  return `https://wa.me/${intl}`;
-}
 function daysSince(dateStr){
   if(!dateStr) return 0;
   const d = new Date(dateStr+'T00:00:00');
@@ -1132,12 +1128,10 @@ function daysSince(dateStr){
 
 async function openComplaints(){
   openInner();
-  const [categories, departments] = await Promise.all([
-    fetchComplaintTaxonomy('category'), fetchComplaintTaxonomy('department')
-  ]);
-  window._complaintDepartments = departments;
+  const requestTypes = await fetchComplaintTaxonomy('requestType');
+  window._complaintRequestTypes = requestTypes;
   const now = new Date();
-  const f = window._complaintFilters || {q:'', year:String(now.getFullYear()), month:'', dept:'', status:'all'};
+  const f = window._complaintFilters || {q:'', year:String(now.getFullYear()), month:'', reqType:'', status:'all'};
   window._complaintFilters = f;
   const yearOptions = []; for(let y=now.getFullYear()+1; y>=now.getFullYear()-3; y--) yearOptions.push(y);
   $('innerContent').innerHTML = `
@@ -1158,10 +1152,10 @@ async function openComplaints(){
             ${COMPLAINT_MONTHS.map((m,i)=>`<option value="${i+1}" ${f.month==String(i+1)?'selected':''}>${m}</option>`).join('')}
           </select>
         </div>
-        <div class="fld"><label>القسم</label>
-          <select id="cpDeptFilter" onchange="loadComplaints()">
-            <option value="">كل الأقسام</option>
-            ${departments.map(d=>`<option value="${escapeHtml(d.text)}" ${f.dept===d.text?'selected':''}>${escapeHtml(d.text)}</option>`).join('')}
+        <div class="fld"><label>نوع الطلب</label>
+          <select id="cpReqTypeFilter" onchange="loadComplaints()">
+            <option value="">كل الأنواع</option>
+            ${requestTypes.map(d=>`<option value="${escapeHtml(d.text)}" ${f.reqType===d.text?'selected':''}>${escapeHtml(d.text)}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -1195,14 +1189,14 @@ async function loadComplaints(){
   f.q = $('cpSearch').value.trim();
   f.year = $('cpYear').value;
   f.month = $('cpMonth').value;
-  f.dept = $('cpDeptFilter').value;
+  f.reqType = $('cpReqTypeFilter').value;
 
   const snap = await db.collection('complaints').get();
   let rows = snap.docs.map(d=>({id:d.id, ...d.data()}));
 
   if(f.year) rows = rows.filter(r=> (r.date||'').slice(0,4) === f.year);
   if(f.month) rows = rows.filter(r=> parseInt((r.date||'').slice(5,7),10) === parseInt(f.month,10));
-  if(f.dept) rows = rows.filter(r=> r.department === f.dept);
+  if(f.reqType) rows = rows.filter(r=> r.requestType === f.reqType);
   if(f.status !== 'all') rows = rows.filter(r=> (r.status||'in_progress') === f.status);
   if(f.q){
     const q = f.q.toLowerCase();
@@ -1238,17 +1232,18 @@ async function loadComplaints(){
     <div class="cl-card complaint-card">
       <div class="cl-card-top">
         <span class="badge ${status==='resolved'?'closed':'open'}">${status==='resolved'?'تم الحل':'قيد المتابعة'}</span>
-        <h4>${escapeHtml(r.customerName||'بدون اسم')}</h4>
+        <h4>${escapeHtml(r.customerName||'بدون اسم')}${r.orderNumber ? ' · أوردر '+escapeHtml(r.orderNumber) : ''}</h4>
       </div>
       <p class="cl-card-sub">${escapeHtml(r.date||'')}${r.phone ? ' · '+escapeHtml(r.phone)+' 📞' : ''}${isLate ? ' <span class="badge late">متأخرة</span>' : ''}</p>
-      ${r.category || r.invoiceDate ? `<p class="cp-line"><b>الصنف:</b> ${escapeHtml(r.category||'—')} ${r.invoiceDate ? '· <b>تاريخ الفاتورة:</b> '+escapeHtml(r.invoiceDate) : ''}</p>` : ''}
-      ${r.itemDetails ? `<p class="cp-line"><b>تفاصيل الصنف:</b> ${escapeHtml(r.itemDetails)}</p>` : ''}
-      ${r.problemText ? `<p class="cp-line"><b>المشكلة:</b> ${escapeHtml(r.problemText)}</p>` : ''}
-      ${r.department ? `<p class="cp-line"><b>القسم المُحال إليه:</b> ${escapeHtml(r.department)}</p>` : ''}
-      ${r.actionTaken ? `<p class="cp-line"><b>الإجراء المتخذ:</b> ${escapeHtml(r.actionTaken)}</p>` : ''}
+      ${r.requestType ? `<p class="cp-line"><b>نوع الطلب:</b> ${escapeHtml(r.requestType)}</p>` : ''}
+      ${r.complaintText ? `<p class="cp-line"><b>الشكوى:</b> ${escapeHtml(r.complaintText)}</p>` : ''}
+      ${r.contactChannel ? `<p class="cp-line"><b>التواصل:</b> ${escapeHtml(r.contactChannel)}</p>` : ''}
+      ${r.response ? `<p class="cp-line"><b>الرد:</b> ${escapeHtml(r.response)}</p>` : ''}
+      ${r.compensation ? `<p class="cp-line"><b>التعويض:</b> ${escapeHtml(r.compensation)}</p>` : ''}
+      ${r.feedbackFollowup ? `<p class="cp-line"><b>متابعة Feedback:</b> ${escapeHtml(r.feedbackFollowup)}</p>` : ''}
       <p class="cl-card-sub" style="margin-top:8px">سجّلها: ${escapeHtml(r.submittedBy||'')}</p>
       <div class="btn-row" style="margin-top:10px">
-        ${r.phone ? `<a href="${waLink(r.phone)}" target="_blank" rel="noopener" style="flex:1; text-align:center; background:#25D366; color:#fff; padding:10px; border-radius:8px; font-weight:700; text-decoration:none;">💬 واتساب</a>` : ''}
+        <button style="flex:1; background:#25D366; color:#fff;" onclick="shareComplaintImage('${r.id}')">💬 مشاركة كصورة</button>
         <button style="flex:1; background:${status==='resolved'?'#8a8f8c':'var(--ok)'}" onclick="toggleComplaintResolved('${r.id}')">${status==='resolved'?'↩ إعادة فتح':'✔ تحديد كمحلولة'}</button>
       </div>
       <div class="btn-row">
@@ -1270,19 +1265,97 @@ async function toggleComplaintResolved(id){
   loadComplaints();
 }
 
+/* ---------- مشاركة الشكوى كصورة (لأي رقم يختاره المستخدم عبر قائمة المشاركة) ---------- */
+function buildComplaintShareHTML(r){
+  const logoImg = document.querySelector('.app-logo, .header-logo');
+  const logoSrc = logoImg ? logoImg.src : '';
+  const status = r.status || 'in_progress';
+  const rows = [
+    ['رقم الأوردر', r.orderNumber],
+    ['اسم العميل', r.customerName],
+    ['رقم التليفون', r.phone],
+    ['نوع الطلب', r.requestType],
+    ['الشكوى', r.complaintText],
+    ['التواصل', r.contactChannel],
+    ['الرد', r.response],
+    ['التعويض', r.compensation],
+    ['متابعة Feedback', r.feedbackFollowup]
+  ].filter(([,v])=> v);
+  const rowsHtml = rows.map(([label,val])=>`
+    <tr style="border-top:1px solid #eee;">
+      <td style="padding:9px 10px;font-weight:800;color:#222;width:150px;vertical-align:top;">${escapeHtml(label)}</td>
+      <td style="padding:9px 10px;color:#444;">${escapeHtml(val)}</td>
+    </tr>`).join('');
+  return `<div style="font-family:Tahoma,Arial,sans-serif;direction:rtl;width:700px;background:#faf6f2;padding:26px 30px;color:#222;box-sizing:border-box;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      ${logoSrc?`<img src="${logoSrc}" style="width:40px;height:40px;border-radius:9px;object-fit:cover;">`:''}
+      <div>
+        <div style="font-weight:900;font-size:19px;color:#014D40;">عرابي</div>
+        <div style="font-size:11px;color:#8a8a8a;">شكوى عميل — ${escapeHtml(r.date||'')}</div>
+      </div>
+      <div style="margin-inline-start:auto;">
+        <span style="display:inline-block;padding:5px 14px;border-radius:20px;font-size:12px;font-weight:800;background:${status==='resolved'?'#e6f6ec':'#fdecea'};color:${status==='resolved'?'#1f8a4c':'#c62828'};">${status==='resolved'?'تم الحل':'قيد المتابعة'}</span>
+      </div>
+    </div>
+    <div style="border:1px solid #eee0d3;border-radius:10px;overflow:hidden;background:#fff;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;"><tbody>${rowsHtml}</tbody></table>
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:#8a8a8a;">سجّلها: ${escapeHtml(r.submittedBy||'')}</div>
+  </div>`;
+}
+function renderComplaintShareCanvas(r){
+  return new Promise((resolve, reject)=>{
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;z-index:-9999;';
+    container.innerHTML = buildComplaintShareHTML(r);
+    document.body.appendChild(container);
+    const capture = ()=>{
+      html2canvas(container.firstElementChild, {scale:2, backgroundColor:'#faf6f2', useCORS:true}).then(canvas=>{
+        container.remove();
+        resolve(canvas);
+      }).catch(err=>{ container.remove(); reject(err); });
+    };
+    if(document.fonts && document.fonts.ready){ document.fonts.ready.then(capture).catch(capture); }
+    else { capture(); }
+  });
+}
+async function shareComplaintImage(id){
+  const r = (window._complaintCache || {})[id];
+  if(!r) return;
+  try{
+    const canvas = await renderComplaintShareCanvas(r);
+    const blob = await new Promise(res=> canvas.toBlob(res, 'image/png', 1));
+    const fileName = `complaint_${r.date||todayStr()}.png`; // اسم إنجليزي عشان مايظهرش مشوّه في واتساب
+    const file = new File([blob], fileName, {type:'image/png'});
+    const caption = `شكوى عميل — ${r.customerName||''} — ${r.date||''}`;
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'شكوى عميل - عرابي', text: caption});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fileName; a.click();
+      URL.revokeObjectURL(url);
+      alert('المتصفح ده مش بيدعم المشاركة المباشرة، فاتحفظت الصورة في الجهاز.');
+    }
+  }catch(e){
+    console.error(e);
+    alert('تعذّر تجهيز الصورة، حاول تاني');
+  }
+}
+
 function exportComplaintsExcel(){
   const rows = window._complaintRows || [];
   if(!rows.length){ alert('لا توجد بيانات لتصديرها بالفلاتر الحالية'); return; }
   downloadExcel(rows.map(r=>({
     التاريخ: r.date||'',
+    'رقم الأوردر': r.orderNumber||'',
     'اسم العميل': r.customerName||'',
     'رقم التليفون': r.phone||'',
-    الصنف: r.category||'',
-    'تاريخ الفاتورة': r.invoiceDate||'',
-    'تفاصيل الصنف': r.itemDetails||'',
-    المشكلة: r.problemText||'',
-    'القسم المُحال إليه': r.department||'',
-    'الإجراء المتخذ': r.actionTaken||'',
+    الشكوى: r.complaintText||'',
+    'نوع الطلب': r.requestType||'',
+    التواصل: r.contactChannel||'',
+    الرد: r.response||'',
+    التعويض: r.compensation||'',
+    'متابعة Feedback': r.feedbackFollowup||'',
     الحالة: (r.status||'in_progress')==='resolved' ? 'تم الحل' : 'قيد المتابعة',
     'سجّلها': r.submittedBy||''
   })), 'شكاوى_العملاء_'+todayStr()+'.xlsx', 'الشكاوى');
@@ -1295,16 +1368,16 @@ async function exportComplaintsPDF(){
     <h2 style="color:#014D40;margin:0 0 16px;">عرابي — شكاوى العملاء</h2>
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead><tr style="background:#014D40;color:#fff;">
-        ${['التاريخ','اسم العميل','التليفون','الصنف','المشكلة','القسم','الحالة'].map(h=>`<th style="padding:8px;text-align:right;">${h}</th>`).join('')}
+        ${['التاريخ','اسم العميل','التليفون','نوع الطلب','الشكوى','التعويض','الحالة'].map(h=>`<th style="padding:8px;text-align:right;">${h}</th>`).join('')}
       </tr></thead>
       <tbody>
         ${rows.map((r,i)=>`<tr style="background:${i%2?'#f7f3ee':'#fff'};border-top:1px solid #eee;">
           <td style="padding:7px;">${escapeHtml(r.date||'')}</td>
           <td style="padding:7px;">${escapeHtml(r.customerName||'')}</td>
           <td style="padding:7px;">${escapeHtml(r.phone||'')}</td>
-          <td style="padding:7px;">${escapeHtml(r.category||'')}</td>
-          <td style="padding:7px;">${escapeHtml(r.problemText||'')}</td>
-          <td style="padding:7px;">${escapeHtml(r.department||'')}</td>
+          <td style="padding:7px;">${escapeHtml(r.requestType||'')}</td>
+          <td style="padding:7px;">${escapeHtml(r.complaintText||'')}</td>
+          <td style="padding:7px;">${escapeHtml(r.compensation||'')}</td>
           <td style="padding:7px;">${(r.status||'in_progress')==='resolved'?'تم الحل':'قيد المتابعة'}</td>
         </tr>`).join('')}
       </tbody>
@@ -1331,10 +1404,8 @@ async function exportComplaintsPDF(){
 async function openComplaintForm(id){
   const editData = id ? (window._complaintCache || {})[id] : null;
   const isEdit = !!editData;
-  const [categories, departments] = await Promise.all([
-    fetchComplaintTaxonomy('category'), fetchComplaintTaxonomy('department')
-  ]);
-  const taxOptions = {category:categories, department:departments};
+  const requestTypes = await fetchComplaintTaxonomy('requestType');
+  const taxOptions = {requestType:requestTypes};
   $('innerContent').innerHTML = `
     <div class="section-title"><h2>📢 ${isEdit ? 'تعديل الشكوى' : 'شكوى جديدة'}</h2></div>
     <div class="card">
@@ -1351,7 +1422,7 @@ async function openComplaintForm(id){
               <option value="">— اختر —</option>
               ${opts.map(o=>`<option value="${escapeHtml(o.text)}" ${val===o.text?'selected':''}>${escapeHtml(o.text)}</option>`).join('')}
             </select>
-            ${!opts.length ? `<p style="color:var(--muted); font-size:.78rem; margin:4px 0 0;">لا توجد خيارات بعد — أضِفها من الإعدادات ‹ Complaint Categories</p>` : ''}`;
+            ${!opts.length ? `<p style="color:var(--muted); font-size:.78rem; margin:4px 0 0;">لا توجد خيارات بعد — أضِفها من الإعدادات ‹ Complaint Request Types</p>` : ''}`;
         }
         return `<label>${escapeHtml(f.label)}</label><input type="text" id="cpF_${f.key}" value="${escapeHtml(val)}">`;
       }).join('')}
@@ -1372,7 +1443,7 @@ async function saveComplaint(existingId){
   if(!date){ err.textContent = 'اختار التاريخ'; return; }
   const payload = { date };
   COMPLAINT_FIELDS.forEach(f=>{ payload[f.key] = $('cpF_'+f.key).value.trim(); });
-  if(!payload.customerName && !payload.problemText){ err.textContent = 'اكتب اسم العميل أو المشكلة على الأقل'; return; }
+  if(!payload.customerName && !payload.complaintText){ err.textContent = 'اكتب اسم العميل أو نص الشكوى على الأقل'; return; }
   try{
     if(existingId){
       payload.updatedBy = state.user.username;
@@ -1399,10 +1470,9 @@ async function deleteComplaint(id, fromDetail){
   if(fromDetail){ history.back(); } else { loadComplaints(); }
 }
 
-/* ---------- أصناف/أقسام الشكاوى (قوائم يتحكم فيها المدير من الإعدادات) ---------- */
+/* ---------- أنواع الطلب في الشكاوى (قائمة يتحكم فيها المدير من الإعدادات) ---------- */
 const COMPLAINT_TAXONOMY_TYPES = [
-  {id:'category',   label:'الصنف (نوع المنتج)'},
-  {id:'department', label:'القسم المُحال إليه'}
+  {id:'requestType', label:'نوع الطلب'}
 ];
 async function fetchComplaintTaxonomyRaw(listType){
   const snap = await db.collection('complaintTaxonomy').where('listType','==',listType).get();
@@ -1415,7 +1485,7 @@ async function fetchComplaintTaxonomy(listType){
 function openSettingsComplaintCategories(){
   openInner();
   $('innerContent').innerHTML = `
-    <div class="section-title"><h2>🗂️ Complaint Categories</h2></div>
+    <div class="section-title"><h2>🗂️ Complaint Request Types</h2></div>
     ${COMPLAINT_TAXONOMY_TYPES.map(t=>`
       <div class="card">
         <h3 style="margin-top:0">${escapeHtml(t.label)}</h3>
@@ -1616,7 +1686,7 @@ function openSettings(){
           <span class="icon">${ct.icon}</span><div class="label">${escapeHtml(label)} Items</div>
         </div>
       `;}).join('')}
-      <div class="tile" onclick="goToScreen(()=>openSettingsComplaintCategories())"><span class="icon">🗂️</span><div class="label">Complaint Categories</div></div>
+      <div class="tile" onclick="goToScreen(()=>openSettingsComplaintCategories())"><span class="icon">🗂️</span><div class="label">Complaint Request Types</div></div>
       <div class="tile" onclick="downloadFullBackup()"><span class="icon">💾</span><div class="label">Download Backup</div></div>
     </div>
   `;
@@ -1674,14 +1744,15 @@ async function downloadFullBackup(){
       const c = d.data();
       return {
         التاريخ: c.date||'',
+        'رقم الأوردر': c.orderNumber||'',
         'اسم العميل': c.customerName||'',
         'رقم التليفون': c.phone||'',
-        الصنف: c.category||'',
-        'تاريخ الفاتورة': c.invoiceDate||'',
-        'تفاصيل الصنف': c.itemDetails||'',
-        المشكلة: c.problemText||'',
-        'القسم المُحال إليه': c.department||'',
-        'الإجراء المتخذ': c.actionTaken||'',
+        الشكوى: c.complaintText||'',
+        'نوع الطلب': c.requestType||'',
+        التواصل: c.contactChannel||'',
+        الرد: c.response||'',
+        التعويض: c.compensation||'',
+        'متابعة Feedback': c.feedbackFollowup||'',
         الحالة: (c.status||'in_progress')==='resolved' ? 'تم الحل' : 'قيد المتابعة',
         'سجّلها': c.submittedBy||''
       };

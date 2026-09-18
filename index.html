@@ -333,7 +333,8 @@ const PERMISSIONS_META = [
   {key:'morningManagerChecklist', label:'Morning Manager Checklist'},
   {key:'eveningManagerChecklist', label:'Evening Manager Checklist'},
   {key:'morningCleaningChecklist',label:'Opening Checklist'},
-  {key:'eveningCleaningChecklist',label:'Closing Checklist'}
+  {key:'eveningCleaningChecklist',label:'Closing Checklist'},
+  {key:'customerComplaints',      label:'Customer Complaints'}
 ];
 
 const CHECKLIST_TYPES = [
@@ -668,6 +669,7 @@ function enterDashboard(){
     const typesInCat = CHECKLIST_TYPES.filter(t=>t.category===cat.id);
     if(typesInCat.some(t=>hasPerm(t.permission))) tiles.push({icon:cat.icon, label:cat.label, fn:()=>openChecklistLog(cat.id)});
   });
+  if(hasPerm('customerComplaints')) tiles.push({icon:'📢', label:'Customer Complaints', fn:()=>openComplaints()});
   if(state.user.role === 'admin') tiles.push({icon:'📈', label:'Checklist Problems Dashboard', fn:()=>openProblemsDashboard()});
   if(state.user.role === 'admin') tiles.push({icon:'⚙️', label:'Settings', fn:openSettings});
 
@@ -1101,6 +1103,142 @@ function exportChecklistSubmissionExcel(id){
 }
 
 /* ============================================================
+   شكاوى العملاء (Customer Complaints)
+   جدول متابعة بنفس بيانات جدول الشكاوى/Feedback الورقي:
+   التاريخ، رقم الأوردر، اسم العميل، رقم التليفون، الشكوى، نوع الطلب،
+   التواصل، الرد، التعويض، متابعة Feedback
+   ============================================================ */
+const COMPLAINT_FIELDS = [
+  {key:'orderNumber',      label:'رقم الأوردر',      type:'text'},
+  {key:'customerName',     label:'اسم العميل',       type:'text'},
+  {key:'phone',            label:'رقم التليفون',      type:'text'},
+  {key:'complaintText',    label:'الشكوى',           type:'textarea'},
+  {key:'requestType',      label:'نوع الطلب',        type:'text'},
+  {key:'contactChannel',   label:'التواصل',          type:'text'},
+  {key:'response',         label:'الرد',             type:'textarea'},
+  {key:'compensation',     label:'التعويض',          type:'text'},
+  {key:'feedbackFollowup', label:'متابعة Feedback',  type:'textarea'}
+];
+
+async function openComplaints(){
+  openInner();
+  const saved = window._complaintFilters || null;
+  const defTo = todayStr();
+  const defFrom = new Date(Date.now() - 29*86400000).toISOString().slice(0,10);
+  $('innerContent').innerHTML = `
+    <div class="section-title"><h2>📢 Customer Complaints</h2></div>
+    <div class="filters">
+      <div class="fld"><label>من تاريخ</label><input type="date" id="cpFrom" value="${saved?saved.from:defFrom}"></div>
+      <div class="fld"><label>إلى تاريخ</label><input type="date" id="cpTo" value="${saved?saved.to:defTo}"></div>
+      <button onclick="loadComplaints()">عرض</button>
+      <button class="secondary" onclick="exportComplaintsExcel()">تصدير Excel</button>
+      <button style="background:var(--brand-dark)" onclick="goToScreen(()=>openComplaintForm())">➕ شكوى جديدة</button>
+    </div>
+    <div id="cpList"><div class="empty-state">جارِ التحميل...</div></div>
+  `;
+  loadComplaints();
+}
+
+async function loadComplaints(){
+  const from = $('cpFrom').value, to = $('cpTo').value;
+  window._complaintFilters = {from, to};
+  const snap = await db.collection('complaints').get();
+  let rows = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  rows = rows.filter(r=> r.date >= from && r.date <= to)
+    .sort((a,b)=> b.date.localeCompare(a.date));
+  window._complaintRows = rows;
+  window._complaintCache = {};
+  rows.forEach(r=> window._complaintCache[r.id] = r);
+  const isAdmin = state.user && state.user.role === 'admin';
+  $('cpList').innerHTML = rows.length ? rows.map(r=>`
+    <div class="cl-card" onclick="goToScreen(()=>openComplaintForm('${r.id}'))">
+      <div class="cl-card-top">
+        <h4>📅 ${escapeHtml(r.date)} ${r.orderNumber ? '· أوردر '+escapeHtml(r.orderNumber) : ''}</h4>
+        ${r.requestType ? `<span class="badge open">${escapeHtml(r.requestType)}</span>` : ''}
+      </div>
+      <p class="cl-card-sub">${escapeHtml(r.customerName||'بدون اسم')}${r.phone ? ' · '+escapeHtml(r.phone) : ''} — سجّلها: ${escapeHtml(r.submittedBy||'')}</p>
+      ${r.complaintText ? `<p style="margin:0 0 8px; font-size:.85rem;">${escapeHtml(r.complaintText)}</p>` : ''}
+      ${isAdmin ? `<button type="button" class="cl-card-del" onclick="event.stopPropagation(); deleteComplaint('${r.id}')">🗑️ حذف</button>` : ''}
+    </div>
+  `).join('') : `<div class="empty-state">لا توجد شكاوى مسجّلة في هذه الفترة</div>`;
+}
+
+function exportComplaintsExcel(){
+  const rows = window._complaintRows || [];
+  if(!rows.length){ alert('اعرض السجل أولاً'); return; }
+  downloadExcel(rows.map(r=>({
+    التاريخ: r.date,
+    'رقم الأوردر': r.orderNumber||'',
+    'اسم العميل': r.customerName||'',
+    'رقم التليفون': r.phone||'',
+    الشكوى: r.complaintText||'',
+    'نوع الطلب': r.requestType||'',
+    التواصل: r.contactChannel||'',
+    الرد: r.response||'',
+    التعويض: r.compensation||'',
+    'متابعة Feedback': r.feedbackFollowup||'',
+    'سجّلها': r.submittedBy||''
+  })), 'شكاوى_العملاء_'+todayStr()+'.xlsx', 'الشكاوى');
+}
+
+function openComplaintForm(id){
+  const editData = id ? (window._complaintCache || {})[id] : null;
+  const isEdit = !!editData;
+  $('innerContent').innerHTML = `
+    <div class="section-title"><h2>📢 ${isEdit ? 'تعديل الشكوى' : 'شكوى جديدة'}</h2></div>
+    <div class="card">
+      <label>التاريخ</label>
+      <input type="date" id="cpDate" value="${isEdit ? escapeHtml(editData.date) : todayStr()}" style="max-width:200px">
+      ${COMPLAINT_FIELDS.map(f=>{
+        const val = isEdit ? (editData[f.key]||'') : '';
+        return f.type==='textarea'
+          ? `<label>${escapeHtml(f.label)}</label><textarea id="cpF_${f.key}">${escapeHtml(val)}</textarea>`
+          : `<label>${escapeHtml(f.label)}</label><input type="text" id="cpF_${f.key}" value="${escapeHtml(val)}">`;
+      }).join('')}
+      <div class="error-msg" id="cpError"></div>
+      <div class="ok-msg" id="cpOk"></div>
+      <div class="btn-row">
+        <button onclick="saveComplaint('${isEdit?id:''}')">${isEdit?'حفظ التعديلات':'إضافة الشكوى'}</button>
+        <button class="ghost" onclick="history.back()">إلغاء</button>
+        ${isEdit && state.user && state.user.role==='admin' ? `<button class="danger" onclick="deleteComplaint('${id}', true)">🗑️ حذف</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function saveComplaint(existingId){
+  const date = $('cpDate').value;
+  const err = $('cpError'); err.textContent='';
+  if(!date){ err.textContent = 'اختار التاريخ'; return; }
+  const payload = { date };
+  COMPLAINT_FIELDS.forEach(f=>{ payload[f.key] = $('cpF_'+f.key).value.trim(); });
+  if(!payload.customerName && !payload.complaintText){ err.textContent = 'اكتب اسم العميل أو نص الشكوى على الأقل'; return; }
+  try{
+    if(existingId){
+      payload.updatedBy = state.user.username;
+      payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection('complaints').doc(existingId).update(payload);
+    } else {
+      payload.submittedBy = state.user.username;
+      payload.submittedAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection('complaints').add(payload);
+    }
+    $('cpOk').textContent = 'تم الحفظ بنجاح';
+    setTimeout(()=> history.back(), 900);
+  }catch(e){
+    console.error(e);
+    err.textContent = 'حصل خطأ أثناء الحفظ، حاول تاني';
+  }
+}
+
+async function deleteComplaint(id, fromDetail){
+  if(!state.user || state.user.role !== 'admin'){ alert('حذف الشكاوى متاح للمدير فقط'); return; }
+  if(!confirm('متأكد إنك عايز تحذف الشكوى دي نهائيًا؟ مفيش رجوع بعد الحذف.')) return;
+  await db.collection('complaints').doc(id).delete();
+  if(fromDetail){ history.back(); } else { loadComplaints(); }
+}
+
+/* ============================================================
    لوحة مشاكل التشيك ليست (للمدير فقط)
    ============================================================ */
 async function openProblemsDashboard(){
@@ -1232,10 +1370,11 @@ function openSettings(){
 /* ---------- نسخة احتياطية شاملة (Excel بعدة شيتات) ---------- */
 async function downloadFullBackup(){
   try{
-    const [usersSnap, itemsSnap, subsSnap] = await Promise.all([
+    const [usersSnap, itemsSnap, subsSnap, complaintsSnap] = await Promise.all([
       db.collection('users').get(),
       db.collection('checklistItems').get(),
-      db.collection('checklistSubmissions').get()
+      db.collection('checklistSubmissions').get(),
+      db.collection('complaints').get()
     ]);
 
     const usersRows = usersSnap.docs.map(d=>{
@@ -1276,10 +1415,28 @@ async function downloadFullBackup(){
       };
     }).sort((a,b)=> (b['التاريخ']||'').localeCompare(a['التاريخ']||''));
 
+    const complaintsRows = complaintsSnap.docs.map(d=>{
+      const c = d.data();
+      return {
+        التاريخ: c.date||'',
+        'رقم الأوردر': c.orderNumber||'',
+        'اسم العميل': c.customerName||'',
+        'رقم التليفون': c.phone||'',
+        الشكوى: c.complaintText||'',
+        'نوع الطلب': c.requestType||'',
+        التواصل: c.contactChannel||'',
+        الرد: c.response||'',
+        التعويض: c.compensation||'',
+        'متابعة Feedback': c.feedbackFollowup||'',
+        'سجّلها': c.submittedBy||''
+      };
+    }).sort((a,b)=> (b['التاريخ']||'').localeCompare(a['التاريخ']||''));
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(usersRows), 'المستخدمين');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsRows), 'بنود التشيك ليست');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(subsRows), 'كل تسجيلات التشيك ليست');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(complaintsRows), 'شكاوى العملاء');
     XLSX.writeFile(wb, 'نسخة_احتياطية_عرابي_'+todayStr()+'.xlsx');
   }catch(e){
     console.error(e);
@@ -1414,7 +1571,7 @@ function renderEmployeeForm(editData){
       <option value="admin" ${isEdit&&editData.role==='admin'?'selected':''}>مدير</option>
     </select>
     <div id="empPermsBlock">
-      <label>صلاحيات التشيك ليست</label>
+      <label>الصلاحيات</label>
       <div class="perm-grid">
         ${PERMISSIONS_META.map(p=>`
           <label><input type="checkbox" class="emp-perm" value="${p.key}" ${isEdit && editData.permissions && editData.permissions[p.key] ? 'checked':''}> ${escapeHtml(p.label)}</label>
